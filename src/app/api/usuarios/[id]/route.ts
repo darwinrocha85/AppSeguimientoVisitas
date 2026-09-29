@@ -78,10 +78,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const s = await leerSesion();
-  if (!esSuperadmin(s))
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await params;
-  const actual = await db.usuario.findUnique({ where: { id } });
+  const actual = await db.usuario.findUnique({
+    where: { id },
+    include: {
+      iglesias: {
+        where: { iglesia: { activo: true } },
+        select: { iglesiaId: true },
+      },
+    },
+  });
   if (!actual)
     return NextResponse.json({ error: "No existe" }, { status: 404 });
   if (actual.rol === "SUPERADMIN")
@@ -89,11 +96,25 @@ export async function DELETE(
       { error: "No se puede eliminar al superadmin" },
       { status: 403 }
     );
-  if (!["PASTOR", "LIDER_CONSOLIDADOR"].includes(actual.rol))
-    return NextResponse.json(
-      { error: "Superadmin solo puede eliminar pastor y líder consolidador" },
-      { status: 403 }
-    );
-  await db.usuario.delete({ where: { id } });
+
+  // Quién puede desactivar a quién (borrado LÓGICO, se conserva el registro):
+  // - Superadmin: ciclo de vida completo (pastor, líder consolidador y roles bajos).
+  // - Pastor y líder consolidador: solo roles bajos de sus propias iglesias.
+  //   El líder consolidador nunca toca al pastor.
+  const esAlta =
+    actual.rol === "PASTOR" || actual.rol === "LIDER_CONSOLIDADOR";
+  let permitido = esSuperadmin(s);
+  if (
+    !permitido &&
+    (s.rol === "PASTOR" || s.rol === "LIDER_CONSOLIDADOR") &&
+    !esAlta
+  ) {
+    const mias = new Set(s.iglesias);
+    permitido = actual.iglesias.some((x) => mias.has(x.iglesiaId));
+  }
+  if (!permitido)
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+
+  await db.usuario.update({ where: { id }, data: { activo: false } });
   return NextResponse.json({ ok: true });
 }

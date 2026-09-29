@@ -90,6 +90,7 @@ export async function GET(req: Request) {
       zona: v.zona,
       estadoActual: v.estadoActual,
       origen: v.origen?.nombre ?? null,
+      iglesiaId: v.iglesiaId,
       iglesia: v.iglesia.nombre,
       red: v.redId ? (nombreRed[v.redId] ?? null) : null,
       grupo: v.grupoId ? (nombreGrupo[v.grupoId] ?? null) : null,

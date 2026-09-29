@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { I, Icono, Vacio, useTablero } from "../ui";
 import { formatearTelefono } from "@/lib/telefono";
@@ -12,6 +13,7 @@ type Visitante = {
   zona: string;
   estadoActual: string;
   origen: string | null;
+  iglesiaId: string;
   iglesia: string;
   red: string | null;
   grupo: string | null;
@@ -43,7 +45,8 @@ function iniciales(n: string, a: string) {
 }
 
 export default function Visitantes() {
-  const { iglesiaId, iglesias, red, grupo, consolidador } = useTablero();
+  const { iglesiaId, iglesias, red, grupo, consolidador, setIglesiaId, setRed, setGrupo, setConsolidador } =
+    useTablero();
   const [busqueda, setBusqueda] = useState("");
   const [lista, setLista] = useState<Visitante[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -143,7 +146,19 @@ export default function Visitantes() {
                     </span>
                     <span className="mt-0.5 block truncate text-xs text-zinc-500">
                       {v.telefono && `${formatearTelefono(v.telefono)} • `}
-                      {v.iglesia}
+                      <Link
+                        href={`/tablero/iglesias/${v.iglesiaId}`}
+                        title={`Ver ${v.iglesia}`}
+                        onClick={() => {
+                          setIglesiaId(v.iglesiaId);
+                          setRed("todas");
+                          setGrupo("todos");
+                          setConsolidador("todos");
+                        }}
+                        className="font-semibold text-navy/80 underline-offset-2 hover:underline"
+                      >
+                        {v.iglesia}
+                      </Link>
                       {[v.red, v.grupo].filter(Boolean).length > 0 &&
                         ` • ${[v.red, v.grupo].filter(Boolean).join(" • ")}`}
                       {v.origen && ` • ${v.origen}`}

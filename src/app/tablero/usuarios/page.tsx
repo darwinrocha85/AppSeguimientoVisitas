@@ -10,6 +10,8 @@ import {
   useTablero,
   type Rol,
 } from "../ui";
+import { Modal } from "@/components/Modal";
+import { SelectorIglesias } from "@/components/SelectorIglesias";
 import { formatearTelefono, soloDigitos } from "@/lib/telefono";
 
 type Usuario = {
@@ -19,6 +21,8 @@ type Usuario = {
   apellido: string;
   telefono?: string | null;
   rol: Rol;
+  red?: string | null;
+  grupo?: string | null;
   iglesias: { iglesia: { id: string; nombre: string } }[];
 };
 
@@ -26,7 +30,8 @@ const campo =
   "min-h-[44px] rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none placeholder:text-[#B8A99A]/70 focus:border-navy/30 focus:ring-4 focus:ring-navy/[0.06]";
 
 export default function Usuarios() {
-  const { iglesias } = useTablero();
+  const { iglesias, setIglesiaId, setRed, setGrupo, setConsolidador } =
+    useTablero();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [restringido, setRestringido] = useState(false);
   const [cargando, setCargando] = useState(true);
@@ -38,6 +43,7 @@ export default function Usuarios() {
   const [asignadas, setAsignadas] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [perfil, setPerfil] = useState<Usuario | null>(null);
 
   async function cargar() {
     const r = await fetch("/api/usuarios");
@@ -56,26 +62,27 @@ export default function Usuarios() {
     void cargar();
   }, []);
 
+  function irAIglesia(id: string) {
+    setIglesiaId(id);
+    setRed("todas");
+    setGrupo("todos");
+    setConsolidador("todos");
+  }
+
   function abrirEdicion(u: Usuario) {
     setEditandoId(u.id);
     setNombre(u.nombre);
     setApellido(u.apellido);
-    setTelefono(u.telefono ?? "");
+    setTelefono(u.telefono ? soloDigitos(u.telefono) : "");
     setAsignadas(u.iglesias.map((x) => x.iglesia.id));
     setError("");
-  }
-
-  function alternarIglesia(id: string, marcado: boolean) {
-    setAsignadas((prev) =>
-      marcado ? [...prev, id].slice(0, 2) : prev.filter((x) => x !== id)
-    );
   }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     if (!editandoId) return;
     if (asignadas.length === 0) {
-      setError("Asigna al menos una iglesia");
+      setError("Debe estar al menos en una iglesia (máximo dos)");
       return;
     }
     setError("");
@@ -96,6 +103,22 @@ export default function Usuarios() {
       return;
     }
     setEditandoId(null);
+    await cargar();
+  }
+
+  async function eliminar(u: Usuario) {
+    if (
+      !window.confirm(
+        `¿Desactivar a ${u.nombre} ${u.apellido}? Se conserva su registro.`
+      )
+    ) {
+      return;
+    }
+    const r = await fetch(`/api/usuarios/${u.id}`, { method: "DELETE" });
+    if (!r.ok) {
+      setError("No se pudo desactivar");
+      return;
+    }
     await cargar();
   }
 
@@ -121,10 +144,10 @@ export default function Usuarios() {
           </span>
           <div className="leading-tight">
             <h2 className="text-[15px] font-black text-navy">
-              Gestión de Usuarios
+              Pastores y líderes consolidadores
             </h2>
             <p className="text-xs text-zinc-500">
-              Pastor (máx 2 iglesias) • líder consolidador (máx 2)
+              Crear, editar y desactivar. Clic en el nombre para ver su perfil.
             </p>
           </div>
         </div>
@@ -136,6 +159,11 @@ export default function Usuarios() {
           Crear usuario
         </Link>
       </div>
+      {error && !editandoId && (
+        <p role="alert" className="mt-3 text-sm font-semibold text-wine">
+          {error}
+        </p>
+      )}
       {usuarios.length === 0 ? (
         <div className="mt-4">
           <Vacio
@@ -156,9 +184,13 @@ export default function Usuarios() {
                 </span>
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-[14px] font-bold text-navy">
+                    <button
+                      onClick={() => setPerfil(u)}
+                      title="Ver perfil y afiliaciones"
+                      className="cursor-pointer text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
+                    >
                       {u.nombre} {u.apellido}
-                    </span>
+                    </button>
                     <span className="rounded-full border border-navy/20 bg-navy/5 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-navy">
                       {ETIQUETA_ROL[u.rol]}
                     </span>
@@ -166,23 +198,67 @@ export default function Usuarios() {
                   <span className="mt-0.5 block truncate text-xs text-zinc-500">
                     @{u.usuario}
                     {u.telefono && ` • ${formatearTelefono(u.telefono)}`}
-                    {u.iglesias.length > 0 &&
-                      ` • ${u.iglesias.map((x) => x.iglesia.nombre).join(", ")}`}
                   </span>
+                  {u.iglesias.length > 0 && (
+                    <span className="mt-0.5 block truncate text-xs">
+                      {u.iglesias.map((x, idx) => (
+                        <span key={x.iglesia.id}>
+                          {idx > 0 && <span className="text-zinc-400"> • </span>}
+                          <Link
+                            href={`/tablero/iglesias/${x.iglesia.id}`}
+                            title={`Ver ${x.iglesia.nombre}`}
+                            onClick={() => irAIglesia(x.iglesia.id)}
+                            className="font-semibold text-navy/80 underline-offset-2 hover:underline"
+                          >
+                            {x.iglesia.nombre}
+                          </Link>
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy">
-                    {u.iglesias.length} iglesia(s)
-                  </span>
-                  {u.rol !== "SUPERADMIN" && (
-                    <button
-                      onClick={() =>
-                        editandoId === u.id ? setEditandoId(null) : abrirEdicion(u)
-                      }
-                      className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
+                  {u.iglesias.length === 1 ? (
+                    <Link
+                      href={`/tablero/iglesias/${u.iglesias[0].iglesia.id}`}
+                      title="Ver iglesia"
+                      onClick={() => irAIglesia(u.iglesias[0].iglesia.id)}
+                      className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
                     >
-                      {editandoId === u.id ? "Cerrar" : "Editar / asignar"}
-                    </button>
+                      1 iglesia
+                    </Link>
+                  ) : u.iglesias.length > 1 ? (
+                    <Link
+                      href={`/tablero/iglesias?usuario=${u.id}`}
+                      title="Ver sus iglesias"
+                      className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
+                    >
+                      {u.iglesias.length} iglesias
+                    </Link>
+                  ) : (
+                    <span className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-zinc-400">
+                      Sin iglesia
+                    </span>
+                  )}
+                  {u.rol !== "SUPERADMIN" && (
+                    <span className="flex gap-1">
+                      <button
+                        onClick={() =>
+                          editandoId === u.id
+                            ? setEditandoId(null)
+                            : abrirEdicion(u)
+                        }
+                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
+                      >
+                        {editandoId === u.id ? "Cerrar" : "Editar"}
+                      </button>
+                      <button
+                        onClick={() => eliminar(u)}
+                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-wine/80 underline-offset-2 hover:underline"
+                      >
+                        Eliminar
+                      </button>
+                    </span>
                   )}
                 </span>
               </div>
@@ -213,26 +289,13 @@ export default function Usuarios() {
                     value={formatearTelefono(telefono)}
                     onChange={(e) => setTelefono(soloDigitos(e.target.value))}
                   />
-                  <fieldset className="md:col-span-2">
-                    <legend className="text-xs font-black tracking-[0.06em] text-navy uppercase">
-                      Iglesias asignadas (máx 2)
-                    </legend>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                      {iglesias.map((ig) => (
-                        <label key={ig.id} className="text-sm text-navy">
-                          <input
-                            type="checkbox"
-                            className="mr-1.5 h-4 w-4 accent-[#204b6e]"
-                            checked={asignadas.includes(ig.id)}
-                            onChange={(e) =>
-                              alternarIglesia(ig.id, e.target.checked)
-                            }
-                          />
-                          {ig.nombre}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <div className="md:col-span-2">
+                    <SelectorIglesias
+                      iglesias={iglesias}
+                      seleccionadas={asignadas}
+                      onChange={setAsignadas}
+                    />
+                  </div>
                   <div className="flex items-end gap-2">
                     <button
                       disabled={guardando}
@@ -251,6 +314,59 @@ export default function Usuarios() {
             </li>
           ))}
         </ul>
+      )}
+
+      {perfil && (
+        <Modal
+          titulo={`${perfil.nombre} ${perfil.apellido}`}
+          onCerrar={() => setPerfil(null)}
+        >
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="font-bold text-zinc-500">Usuario</dt>
+              <dd className="font-semibold text-navy">@{perfil.usuario}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="font-bold text-zinc-500">Rol</dt>
+              <dd className="font-semibold text-navy">
+                {ETIQUETA_ROL[perfil.rol]}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="font-bold text-zinc-500">Teléfono</dt>
+              <dd className="font-semibold text-navy">
+                {perfil.telefono
+                  ? formatearTelefono(perfil.telefono)
+                  : "No registrado"}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="font-bold text-zinc-500">Estado</dt>
+              <dd className="font-semibold text-[#1F7A4B]">Activo</dd>
+            </div>
+            <div>
+              <dt className="font-bold text-zinc-500">Iglesias</dt>
+              <dd className="mt-1 flex flex-wrap gap-1.5">
+                {perfil.iglesias.map((x) => (
+                  <span
+                    key={x.iglesia.id}
+                    className="rounded-full border border-navy/20 bg-navy/5 px-3 py-1 text-[13px] font-semibold text-navy"
+                  >
+                    {x.iglesia.nombre}
+                  </span>
+                ))}
+              </dd>
+            </div>
+            {(perfil.red || perfil.grupo) && (
+              <div className="flex justify-between gap-3">
+                <dt className="font-bold text-zinc-500">Alcance</dt>
+                <dd className="text-right font-semibold text-navy">
+                  {[perfil.red, perfil.grupo].filter(Boolean).join(" • ")}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </Modal>
       )}
     </section>
   );

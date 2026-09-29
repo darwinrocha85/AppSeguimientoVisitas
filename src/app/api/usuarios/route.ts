@@ -34,7 +34,10 @@ export async function GET() {
   if (!esSuperadmin(s))
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   const usuarios = await db.usuario.findMany({
-    where: { rol: { in: ["PASTOR", "LIDER_CONSOLIDADOR", "SUPERADMIN"] } },
+    where: {
+      rol: { in: ["PASTOR", "LIDER_CONSOLIDADOR", "SUPERADMIN"] },
+      activo: true,
+    },
     include: {
       iglesias: {
         where: { iglesia: { activo: true } },
@@ -43,7 +46,28 @@ export async function GET() {
     },
     orderBy: { usuario: "asc" },
   });
-  return NextResponse.json(usuarios.map(sinHash));
+  // Nombres de red/grupo para mostrar afiliaciones (sin relaciones en el esquema).
+  const redIds = [...new Set(usuarios.map((u) => u.redId).filter(Boolean))];
+  const grupoIds = [...new Set(usuarios.map((u) => u.grupoId).filter(Boolean))];
+  const [redes, grupos] = await Promise.all([
+    redIds.length > 0
+      ? await db.red.findMany({ where: { id: { in: redIds as string[] } } })
+      : [],
+    grupoIds.length > 0
+      ? await db.grupo.findMany({
+          where: { id: { in: grupoIds as string[] } },
+        })
+      : [],
+  ]);
+  const nombreRed = Object.fromEntries(redes.map((r) => [r.id, r.nombre]));
+  const nombreGrupo = Object.fromEntries(grupos.map((g) => [g.id, g.nombre]));
+  return NextResponse.json(
+    usuarios.map((u) => ({
+      ...sinHash(u),
+      red: u.redId ? (nombreRed[u.redId] ?? null) : null,
+      grupo: u.grupoId ? (nombreGrupo[u.grupoId] ?? null) : null,
+    }))
+  );
 }
 
 export async function POST(req: Request) {

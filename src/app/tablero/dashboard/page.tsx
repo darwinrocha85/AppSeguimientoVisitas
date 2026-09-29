@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { I, Icono, TarjetaEstado, useTablero } from "../ui";
 import { formatearTelefono, soloDigitos } from "@/lib/telefono";
 
@@ -37,7 +38,7 @@ const ESTADOS = [
 ];
 
 export default function Dashboard() {
-  const { iglesias, iglesiaId, setIglesiaId, sesion, recargarIglesias, resumen, recargarResumen } =
+  const { iglesias, iglesiaId, setIglesiaId, setRed, setGrupo, setConsolidador, sesion, recargarIglesias, resumen, recargarResumen } =
     useTablero();
   const esAdmin = sesion?.rol === "SUPERADMIN";
   const visibles = iglesiaId
@@ -247,21 +248,19 @@ export default function Dashboard() {
                     {ig.nombre.charAt(0).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1 leading-tight">
-                    {esAdmin ? (
-                      <button
-                        onClick={() =>
-                          abrirEdicion(ig.id, ig.nombre, ig.direccion, ig.telefono)
-                        }
-                        title="Editar datos de la iglesia"
-                        className="block max-w-full cursor-pointer truncate text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
-                      >
-                        {ig.nombre}
-                      </button>
-                    ) : (
-                      <span className="block truncate text-[14px] font-bold text-navy">
-                        {ig.nombre}
-                      </span>
-                    )}
+                    <Link
+                      href={`/tablero/iglesias/${ig.id}`}
+                      title="Ver información de la iglesia"
+                      onClick={() => {
+                        setIglesiaId(ig.id);
+                        setRed("todas");
+                        setGrupo("todos");
+                        setConsolidador("todos");
+                      }}
+                      className="block max-w-full truncate text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
+                    >
+                      {ig.nombre}
+                    </Link>
                     <span className="mt-0.5 block truncate text-xs text-zinc-500">
                       {[
                         ig.direccion,
@@ -357,6 +356,7 @@ export default function Dashboard() {
           </ul>
         )}
       </section>
+
     </div>
   );
 }

@@ -540,7 +540,29 @@ export function Cascaron({ children }: { children: ReactNode }) {
         )}
 
         <main className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
-          {/* Filtros */}
+          {/* Tabs primero, filtros después */}
+          <nav aria-label="Secciones" className="flex flex-wrap gap-2">
+            {TABS.map((t) => {
+              const activo = pathname === t.href;
+              return (
+                <Link
+                  key={t.href}
+                  href={t.href}
+                  aria-current={activo ? "page" : undefined}
+                  className={`flex min-h-[44px] items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition-all duration-200 ${
+                    activo
+                      ? "border-navy bg-navy text-white shadow-[0_6px_16px_-6px_rgba(32,75,110,0.5)]"
+                      : "border-sand bg-white text-zinc-600 hover:bg-paper"
+                  }`}
+                >
+                  <Icono className="h-4 w-4">{t.icono}</Icono>
+                  {t.etiqueta}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Filtros (en la página de iglesia viene pre-seleccionada y navega al cambiar) */}
           <div className="flex flex-wrap items-center gap-2">
             <Filtro
               etiqueta="Iglesia"
@@ -552,12 +574,17 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 setRed("todas");
                 setGrupo("todos");
                 setConsolidador("todos");
+                if (v && pathname.startsWith("/tablero/iglesias/")) {
+                  router.push(`/tablero/iglesias/${v}`);
+                }
               }}
               aria="Filtrar por iglesia"
               opciones={
                 iglesias.length > 0
                   ? [
-                      { value: "", texto: "Todas" },
+                      ...(!pathname.startsWith("/tablero/iglesias/")
+                        ? [{ value: "", texto: "Todas" }]
+                        : []),
                       ...iglesias.map((i) => ({
                         value: i.id,
                         texto: i.nombre,
@@ -624,28 +651,6 @@ export function Cascaron({ children }: { children: ReactNode }) {
             />
             )}
           </div>
-
-          {/* Tabs */}
-          <nav aria-label="Secciones" className="flex flex-wrap gap-2">
-            {TABS.map((t) => {
-              const activo = pathname === t.href;
-              return (
-                <Link
-                  key={t.href}
-                  href={t.href}
-                  aria-current={activo ? "page" : undefined}
-                  className={`flex min-h-[44px] items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition-all duration-200 ${
-                    activo
-                      ? "border-navy bg-navy text-white shadow-[0_6px_16px_-6px_rgba(32,75,110,0.5)]"
-                      : "border-sand bg-white text-zinc-600 hover:bg-paper"
-                  }`}
-                >
-                  <Icono className="h-4 w-4">{t.icono}</Icono>
-                  {t.etiqueta}
-                </Link>
-              );
-            })}
-          </nav>
 
           {children}
         </main>
