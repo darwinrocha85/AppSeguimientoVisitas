@@ -10,16 +10,18 @@ async function asegurarIglesia(nombre, direccion, telefono) {
   if (!ig) {
     ig = await db.iglesia.create({ data: { nombre, direccion, telefono } });
   }
-  for (const estado of [
-    "DESEA_SER_CONTACTADO",
-    "PRIMER_CONTACTO",
-    "SEGUNDO_CONTACTO",
-    "VISITA_AMISTAD",
-  ]) {
+  // Límites de alerta por transición (los fija el pastor; valores de ejemplo)
+  const LIMITES = {
+    DESEA_SER_CONTACTADO: 72,
+    PRIMER_CONTACTO: 100,
+    SEGUNDO_CONTACTO: 124,
+    VISITA_AMISTAD: 168,
+  };
+  for (const estado of Object.keys(LIMITES)) {
     await db.alertaConfig.upsert({
       where: { iglesiaId_estado: { iglesiaId: ig.id, estado } },
       update: {},
-      create: { iglesiaId: ig.id, estado, maxHoras: 100 },
+      create: { iglesiaId: ig.id, estado, maxHoras: LIMITES[estado] },
     });
   }
   return ig;
@@ -207,6 +209,7 @@ async function main() {
     usuario: "lider.familias",
     nombre: "Pedro",
     apellido: "Salazar",
+    telefono: "644111222",
     rol: "LIDER_RED",
     iglesiaIds: [central.id],
     redId: fam.id,
@@ -219,6 +222,7 @@ async function main() {
     usuario: "lider.gracia",
     nombre: "Ana",
     apellido: "Torres",
+    telefono: "644222333",
     rol: "LIDER_GRUPO",
     iglesiaIds: [central.id],
     grupoId: gracia.id,
@@ -301,11 +305,12 @@ async function main() {
   });
 
   // Líderes de red y grupo restantes (uno por nivel para la demo)
-  async function liderRed(usuario, nombre, apellido, iglesia, redObj) {
+  async function liderRed(usuario, nombre, apellido, telefono, iglesia, redObj) {
     const u = await asegurarUsuario(hash, {
       usuario,
       nombre,
       apellido,
+      telefono,
       rol: "LIDER_RED",
       iglesiaIds: [iglesia.id],
       redId: redObj.id,
@@ -313,11 +318,12 @@ async function main() {
     await db.red.update({ where: { id: redObj.id }, data: { liderId: u.id } });
     return u;
   }
-  async function liderGrupo(usuario, nombre, apellido, iglesia, grupoObj) {
+  async function liderGrupo(usuario, nombre, apellido, telefono, iglesia, grupoObj) {
     const u = await asegurarUsuario(hash, {
       usuario,
       nombre,
       apellido,
+      telefono,
       rol: "LIDER_GRUPO",
       iglesiaIds: [iglesia.id],
       grupoId: grupoObj.id,
@@ -328,15 +334,15 @@ async function main() {
     });
     return u;
   }
-  await liderRed("lider.jovenes", "Carmen", "Díaz", central, jov);
-  await liderRed("lider.norte", "Hugo", "Molina", norte, redNorte);
-  await liderRed("lider.sur", "Irene", "Vargas", sur, redSur);
-  await liderRed("lider.redeste", "Tomás", "Ramos", este, redEste);
-  await liderGrupo("lider.fe", "Paula", "Serra", central, fe);
-  await liderGrupo("lider.fuego", "Andrés", "Blanco", central, fuego);
-  await liderGrupo("lider.norte201", "Mario", "Suárez", norte, gNorte);
-  await liderGrupo("lider.sur301", "Julia", "Aguilar", sur, gSur);
-  await liderGrupo("lider.este401", "David", "Delgado", este, gEste);
+  await liderRed("lider.jovenes", "Carmen", "Díaz", "644444555", central, jov);
+  await liderRed("lider.norte", "Hugo", "Molina", "645555666", norte, redNorte);
+  await liderRed("lider.sur", "Irene", "Vargas", "646666777", sur, redSur);
+  await liderRed("lider.redeste", "Tomás", "Ramos", "647777888", este, redEste);
+  await liderGrupo("lider.fe", "Paula", "Serra", "648888999", central, fe);
+  await liderGrupo("lider.fuego", "Andrés", "Blanco", "649999000", central, fuego);
+  await liderGrupo("lider.norte201", "Mario", "Suárez", "640000111", norte, gNorte);
+  await liderGrupo("lider.sur301", "Julia", "Aguilar", "640000222", sur, gSur);
+  await liderGrupo("lider.este401", "David", "Delgado", "640000333", este, gEste);
 
   // Visitantes ficticios
   const V = (o) => ({
@@ -567,8 +573,10 @@ async function main() {
         fechas.unshift(haceDias);
       }
       if (fechas[0] > 90) continue; // fuera de ventana, reintentar
-      const nombre = NOMBRES[(i * 7 + 3) % NOMBRES.length];
-      const apellido = APELLIDOS[(i * 11 + 5) % APELLIDOS.length];
+      // Pareja nombre+apellido única para i<900 (evita duplicados confusos)
+      const nombre = NOMBRES[i % NOMBRES.length];
+      const apellido =
+        APELLIDOS[(i * 7 + Math.floor(i / NOMBRES.length)) % APELLIDOS.length];
       const creado = await db.visitante.create({
         data: {
           nombre,

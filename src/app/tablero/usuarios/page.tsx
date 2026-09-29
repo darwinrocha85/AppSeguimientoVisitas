@@ -23,15 +23,38 @@ type Usuario = {
   rol: Rol;
   red?: string | null;
   grupo?: string | null;
+  redId?: string | null;
+  grupoId?: string | null;
   iglesias: { iglesia: { id: string; nombre: string } }[];
 };
 
 const campo =
   "min-h-[44px] rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none placeholder:text-[#B8A99A]/70 focus:border-navy/30 focus:ring-4 focus:ring-navy/[0.06]";
 
+const ROLES_BAJOS: { value: Rol; texto: string }[] = [
+  { value: "LIDER_RED", texto: "Líder de red" },
+  { value: "LIDER_GRUPO", texto: "Líder de grupo" },
+  { value: "CONSOLIDADOR", texto: "Consolidador" },
+];
+
 export default function Usuarios() {
-  const { iglesias, setIglesiaId, setRed, setGrupo, setConsolidador, iglesiaId, red, grupo, consolidador } =
-    useTablero();
+  const {
+    iglesias,
+    setIglesiaId,
+    setRed,
+    setGrupo,
+    setConsolidador,
+    iglesiaId,
+    red,
+    grupo,
+    consolidador,
+    resumen,
+    sesion,
+  } = useTablero();
+  const esSuper = sesion?.rol === "SUPERADMIN";
+  const esGestorUi =
+    sesion?.rol === "PASTOR" || sesion?.rol === "LIDER_CONSOLIDADOR";
+
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [restringido, setRestringido] = useState(false);
   const [cargando, setCargando] = useState(true);
@@ -41,9 +64,23 @@ export default function Usuarios() {
   const [apellido, setApellido] = useState("");
   const [telefono, setTelefono] = useState("");
   const [asignadas, setAsignadas] = useState<string[]>([]);
+  const [editRed, setEditRed] = useState("");
+  const [editGrupo, setEditGrupo] = useState("");
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [perfil, setPerfil] = useState<Usuario | null>(null);
+
+  // Crear (gestores): líder red/grupo o consolidador de sus iglesias.
+  const [creando, setCreando] = useState(false);
+  const [fUsuario, setFUsuario] = useState("");
+  const [fContrasena, setFContrasena] = useState("");
+  const [fNombre, setFNombre] = useState("");
+  const [fApellido, setFApellido] = useState("");
+  const [fTelefono, setFTelefono] = useState("");
+  const [fRol, setFRol] = useState<Rol>("CONSOLIDADOR");
+  const [fIglesia, setFIglesia] = useState("");
+  const [fRed, setFRed] = useState("");
+  const [fGrupo, setFGrupo] = useState("");
 
   async function cargar() {
     const qs = new URLSearchParams();
@@ -95,35 +132,65 @@ export default function Usuarios() {
     setApellido(u.apellido);
     setTelefono(u.telefono ? soloDigitos(u.telefono) : "");
     setAsignadas(u.iglesias.map((x) => x.iglesia.id));
+    setEditRed(u.redId ?? "");
+    setEditGrupo(u.grupoId ?? "");
     setError("");
   }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     if (!editandoId) return;
-    if (asignadas.length === 0) {
+    if (esSuper && asignadas.length === 0) {
       setError("Debe estar al menos en una iglesia (máximo dos)");
       return;
     }
     setError("");
     setGuardando(true);
+    const cuerpo: Record<string, unknown> = {
+      nombre,
+      apellido,
+      telefono: telefono || null,
+    };
+    if (esSuper) {
+      cuerpo.iglesiaIds = asignadas;
+    } else {
+      const ig = u_iglesiaActual();
+      if (!ig) {
+        setError("Elige la iglesia");
+        setGuardando(false);
+        return;
+      }
+      cuerpo.iglesiaIds = [ig];
+      cuerpo.redId = editRed || null;
+      cuerpo.grupoId = editGrupo || null;
+    }
     const r = await fetch(`/api/usuarios/${editandoId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre,
-        apellido,
-        telefono: telefono || null,
-        iglesiaIds: asignadas,
-      }),
+      body: JSON.stringify(cuerpo),
     });
     setGuardando(false);
     if (!r.ok) {
-      setError("No se pudo guardar");
+      const j = await r.json().catch(() => null);
+      setError(j?.error ?? "No se pudo guardar");
       return;
     }
     setEditandoId(null);
     await cargar();
+  }
+
+  function u_iglesiaActual(): string | null {
+    const u = usuarios.find((x) => x.id === editandoId);
+    if (!u || u.iglesias.length === 0) return iglesias[0]?.id ?? null;
+    return u.iglesias[0].iglesia.id;
+  }
+
+  /** Quién puede tocar a quién en esta vista (la API vuelve a validar). */
+  function puedeEditar(u: Usuario) {
+    if (u.rol === "SUPERADMIN") return false;
+    if (esSuper) return true;
+    if (!esGestorUi) return false;
+    return !["PASTOR", "LIDER_CONSOLIDADOR"].includes(u.rol);
   }
 
   async function eliminar(u: Usuario) {
@@ -136,9 +203,46 @@ export default function Usuarios() {
     }
     const r = await fetch(`/api/usuarios/${u.id}`, { method: "DELETE" });
     if (!r.ok) {
-      setError("No se pudo desactivar");
+      const j = await r.json().catch(() => null);
+      setError(j?.error ?? "No se pudo desactivar");
       return;
     }
+    await cargar();
+  }
+
+  async function crear(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setGuardando(true);
+    const r = await fetch("/api/usuarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usuario: fUsuario,
+        contrasena: fContrasena,
+        nombre: fNombre,
+        apellido: fApellido,
+        telefono: fTelefono || undefined,
+        rol: fRol,
+        iglesiaIds: [fIglesia],
+        redId: fRed || undefined,
+        grupoId: fGrupo || undefined,
+      }),
+    });
+    setGuardando(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setError(j?.error ?? "No se pudo crear");
+      return;
+    }
+    setCreando(false);
+    setFUsuario("");
+    setFContrasena("");
+    setFNombre("");
+    setFApellido("");
+    setFTelefono("");
+    setFRed("");
+    setFGrupo("");
     await cargar();
   }
 
@@ -155,6 +259,11 @@ export default function Usuarios() {
     );
   }
 
+  const redesDe = (iglesia: string) =>
+    (resumen?.redes ?? []).filter((r) => !iglesia || r.iglesiaId === iglesia);
+  const gruposDe = (redId: string) =>
+    (resumen?.grupos ?? []).filter((g) => !redId || g.redId === redId);
+
   return (
     <section className="rounded-2xl border border-sand/60 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -164,31 +273,91 @@ export default function Usuarios() {
           </span>
           <div className="leading-tight">
             <h2 className="text-[15px] font-black text-navy">
-              Pastores y líderes consolidadores
+              {esSuper ? "Pastores y líderes consolidadores" : "Equipo de mis iglesias"}
             </h2>
             <p className="text-xs text-zinc-500">
-              Crear, editar y desactivar. Clic en el nombre para ver su perfil.
+              {esSuper
+                ? "Crear, editar y desactivar. Clic en el nombre para ver su perfil."
+                : "Crea y gestiona líderes y consolidadores de tu alcance."}
             </p>
           </div>
         </div>
-        <Link
-          href="/admin"
-          className="flex min-h-[44px] items-center gap-1.5 rounded-full bg-navy px-5 text-sm font-black tracking-wide text-white uppercase transition-all duration-200 hover:bg-navy-dark"
-        >
-          <Icono className="h-4 w-4">{I.mas}</Icono>
-          Crear usuario
-        </Link>
+        {esSuper ? (
+          <Link
+            href="/admin"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-full bg-navy px-5 text-sm font-black tracking-wide text-white uppercase transition-all duration-200 hover:bg-navy-dark"
+          >
+            <Icono className="h-4 w-4">{I.mas}</Icono>
+            Crear usuario
+          </Link>
+        ) : (
+          <button
+            onClick={() => {
+              setCreando((v) => !v);
+              if (!fIglesia && iglesias.length > 0) setFIglesia(iglesias[0].id);
+            }}
+            className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full bg-navy px-5 text-sm font-black tracking-wide text-white uppercase transition-all duration-200 hover:bg-navy-dark"
+          >
+            <Icono className="h-4 w-4">{I.mas}</Icono>
+            Nuevo
+          </button>
+        )}
       </div>
+
+      {esGestorUi && creando && (
+        <form
+          onSubmit={crear}
+          className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-paper p-3 md:grid-cols-3"
+        >
+          <input aria-label="Usuario login" className={campo} placeholder="Usuario login" value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} required minLength={3} />
+          <input aria-label="Contraseña" className={campo} placeholder="Contraseña (min 6)" type="password" value={fContrasena} onChange={(e) => setFContrasena(e.target.value)} required minLength={6} autoComplete="new-password" />
+          <select aria-label="Rol" className={`${campo} cursor-pointer`} value={fRol} onChange={(e) => setFRol(e.target.value as Rol)}>
+            {ROLES_BAJOS.map((r) => (
+              <option key={r.value} value={r.value}>{r.texto}</option>
+            ))}
+          </select>
+          <input aria-label="Nombre" className={campo} placeholder="Nombre" value={fNombre} onChange={(e) => setFNombre(e.target.value)} required />
+          <input aria-label="Apellido" className={campo} placeholder="Apellido" value={fApellido} onChange={(e) => setFApellido(e.target.value)} required />
+          <input aria-label="Teléfono" className={campo} placeholder="Teléfono (607 35 00 44)" inputMode="numeric" value={formatearTelefono(fTelefono)} onChange={(e) => setFTelefono(soloDigitos(e.target.value))} />
+          <select aria-label="Iglesia" className={`${campo} cursor-pointer`} value={fIglesia} onChange={(e) => { setFIglesia(e.target.value); setFRed(""); setFGrupo(""); }} required>
+            <option value="">Iglesia…</option>
+            {iglesias.map((ig) => (
+              <option key={ig.id} value={ig.id}>{ig.nombre}</option>
+            ))}
+          </select>
+          <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
+            <option value="">Red (opcional)…</option>
+            {redesDe(fIglesia).map((r) => (
+              <option key={r.id} value={r.id}>{r.nombre}</option>
+            ))}
+          </select>
+          <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} onChange={(e) => setFGrupo(e.target.value)}>
+            <option value="">Grupo (opcional)…</option>
+            {gruposDe(fRed).map((g) => (
+              <option key={g.id} value={g.id}>{g.nombre}</option>
+            ))}
+          </select>
+          <div className="md:col-span-3">
+            <button
+              disabled={guardando}
+              className="min-h-[44px] w-full cursor-pointer rounded-xl bg-wine px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-[#8A1830] disabled:opacity-60"
+            >
+              {guardando ? "Creando…" : "Crear"}
+            </button>
+          </div>
+        </form>
+      )}
       {error && !editandoId && (
         <p role="alert" className="mt-3 text-sm font-semibold text-wine">
           {error}
         </p>
       )}
+
       {usuarios.length === 0 ? (
         <div className="mt-4">
           <Vacio
-            titulo="Sin usuarios"
-            detalle="Crea el primer pastor o líder consolidador desde el panel de administración."
+            titulo="Sin usuarios en este filtro"
+            detalle="Ajusta los filtros superiores o crea el primero."
           />
         </div>
       ) : (
@@ -262,7 +431,7 @@ export default function Usuarios() {
                       Sin iglesia
                     </span>
                   )}
-                  {u.rol !== "SUPERADMIN" && (
+                  {puedeEditar(u) && (
                     <span className="flex gap-1">
                       <button
                         onClick={() =>
@@ -311,13 +480,43 @@ export default function Usuarios() {
                     value={formatearTelefono(telefono)}
                     onChange={(e) => setTelefono(soloDigitos(e.target.value))}
                   />
-                  <div className="md:col-span-2">
-                    <SelectorIglesias
-                      iglesias={iglesias}
-                      seleccionadas={asignadas}
-                      onChange={setAsignadas}
-                    />
-                  </div>
+                  {esSuper ? (
+                    <div className="md:col-span-2">
+                      <SelectorIglesias
+                        iglesias={iglesias}
+                        seleccionadas={asignadas}
+                        onChange={setAsignadas}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        aria-label="Red"
+                        className={`${campo} cursor-pointer`}
+                        value={editRed}
+                        onChange={(e) => {
+                          setEditRed(e.target.value);
+                          setEditGrupo("");
+                        }}
+                      >
+                        <option value="">Sin red…</option>
+                        {redesDe(u.iglesias[0]?.iglesia.id ?? "").map((r) => (
+                          <option key={r.id} value={r.id}>{r.nombre}</option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Grupo"
+                        className={`${campo} cursor-pointer`}
+                        value={editGrupo}
+                        onChange={(e) => setEditGrupo(e.target.value)}
+                      >
+                        <option value="">Sin grupo…</option>
+                        {gruposDe(editRed).map((g) => (
+                          <option key={g.id} value={g.id}>{g.nombre}</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                   <div className="flex items-end gap-2">
                     <button
                       disabled={guardando}

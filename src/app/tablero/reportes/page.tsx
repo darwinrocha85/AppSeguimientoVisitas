@@ -407,6 +407,7 @@ export default function Reportes() {
             valor={stats?.porEstado[e.clave] ?? "…"}
             pie={e.pie}
             tinta={e.tinta}
+            href={`/tablero/visitantes?estado=${e.clave}`}
           />
         ))}
       </div>

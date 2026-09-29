@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
+import { esGestor } from "@/lib/alcance";
 import { esSuperadmin } from "@/lib/permisos";
 import { TELEFONO_AYUDA, TELEFONO_REGEX } from "@/lib/telefono";
 
@@ -12,6 +13,8 @@ const Esquema = z.object({
   telefono: z.string().regex(TELEFONO_REGEX, TELEFONO_AYUDA).nullable().optional(),
   contrasena: z.string().min(6).optional(),
   iglesiaIds: z.array(z.string()).min(1).max(2).optional(),
+  redId: z.string().nullable().optional(),
+  grupoId: z.string().nullable().optional(),
   activo: z.boolean().optional(),
 });
 
@@ -26,22 +29,91 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const s = await leerSesion();
-  if (!esSuperadmin(s))
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await params;
-  const actual = await db.usuario.findUnique({ where: { id } });
+  const actual = await db.usuario.findUnique({
+    where: { id },
+    include: {
+      iglesias: {
+        where: { iglesia: { activo: true } },
+        select: { iglesiaId: true },
+      },
+    },
+  });
   if (!actual)
     return NextResponse.json({ error: "No existe" }, { status: 404 });
-  // Superadmin solo edita pastor, líder consolidador e iglesia (no otros roles).
-  if (!["PASTOR", "LIDER_CONSOLIDADOR", "SUPERADMIN"].includes(actual.rol))
-    return NextResponse.json(
-      { error: "Superadmin solo puede editar pastor y líder consolidador" },
-      { status: 403 }
-    );
+
+  const esAlta =
+    actual.rol === "PASTOR" ||
+    actual.rol === "LIDER_CONSOLIDADOR" ||
+    actual.rol === "SUPERADMIN";
+  const gestor = esGestor(s);
+  // Superadmin edita altas; gestores editan roles bajos de SUS iglesias.
+  if (esSuperadmin(s)) {
+    if (!esAlta)
+      return NextResponse.json(
+        { error: "Superadmin solo puede editar pastor y líder consolidador" },
+        { status: 403 }
+      );
+  } else if (gestor) {
+    if (esAlta) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+    const mias = new Set(s.iglesias);
+    if (!actual.iglesias.some((x) => mias.has(x.iglesiaId)))
+      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  } else {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  }
 
   const datos = Esquema.safeParse(await req.json().catch(() => null));
   if (!datos.success)
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+  // Teléfono obligatorio para pastor y los tres niveles de líderes.
+  const telFinal = datos.data.telefono !== undefined ? datos.data.telefono : actual.telefono;
+  if (
+    ["PASTOR", "LIDER_CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO"].includes(
+      actual.rol
+    ) &&
+    !telFinal
+  ) {
+    return NextResponse.json(
+      { error: "Teléfono obligatorio (9 dígitos)" },
+      { status: 400 }
+    );
+  }
+
+  // Gestores: una sola iglesia propia; red/grupo validados contra ella.
+  let iglesiaIds = datos.data.iglesiaIds;
+  if (gestor && !esSuperadmin(s)) {
+    const base = iglesiaIds ?? actual.iglesias.map((x) => x.iglesiaId);
+    if (base.length !== 1 || !s.iglesias.includes(base[0]))
+      return NextResponse.json(
+        { error: "Una sola iglesia de tu alcance" },
+        { status: 400 }
+      );
+    iglesiaIds = base;
+  }
+  const iglesiaFinal = iglesiaIds ? iglesiaIds[0] : actual.iglesias[0]?.iglesiaId;
+  if (datos.data.redId && iglesiaFinal) {
+    const r = await db.red.findFirst({
+      where: { id: datos.data.redId, iglesiaId: iglesiaFinal, activo: true },
+      select: { id: true },
+    });
+    if (!r)
+      return NextResponse.json({ error: "Red inválida" }, { status: 400 });
+  }
+  if (datos.data.grupoId && iglesiaFinal) {
+    const g = await db.grupo.findFirst({
+      where: {
+        id: datos.data.grupoId,
+        iglesiaId: iglesiaFinal,
+        activo: true,
+        ...(datos.data.redId ? { redId: datos.data.redId } : {}),
+      },
+      select: { id: true },
+    });
+    if (!g)
+      return NextResponse.json({ error: "Grupo inválido" }, { status: 400 });
+  }
 
   const actualizado = await db.usuario.update({
     where: { id },
@@ -51,17 +123,21 @@ export async function PUT(
       ...(datos.data.telefono !== undefined
         ? { telefono: datos.data.telefono }
         : {}),
-      ...(datos.data.activo !== undefined
+      ...(datos.data.activo !== undefined && esSuperadmin(s)
         ? { activo: datos.data.activo }
         : {}),
       ...(datos.data.contrasena
         ? { passwordHash: await bcrypt.hash(datos.data.contrasena, 10) }
         : {}),
-      ...(datos.data.iglesiaIds
+      ...(datos.data.redId !== undefined ? { redId: datos.data.redId } : {}),
+      ...(datos.data.grupoId !== undefined
+        ? { grupoId: datos.data.grupoId }
+        : {}),
+      ...(iglesiaIds
         ? {
             iglesias: {
               deleteMany: {},
-              create: datos.data.iglesiaIds.map((iglesiaId) => ({
+              create: iglesiaIds.map((iglesiaId) => ({
                 iglesiaId,
               })),
             },

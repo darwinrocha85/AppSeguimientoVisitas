@@ -107,6 +107,13 @@ export async function GET(req: Request) {
   const conteoConso = Object.fromEntries(
     porConso.map((p) => [p.consolidadorId, p._count])
   );
+  const alertas =
+    ids.length > 0
+      ? await db.alertaConfig.findMany({
+          where: { iglesiaId: { in: ids } },
+          select: { iglesiaId: true, estado: true, maxHoras: true },
+        })
+      : [];
   // Consolidadores rasos del alcance para el 4º dropdown en cascada.
   const rasos =
     s.rol === "CONSOLIDADOR"
@@ -150,6 +157,7 @@ export async function GET(req: Request) {
       ...r,
       total: conteoConso[r.id] ?? 0,
     })),
+    alertas,
     filtroAplicado: {
       iglesiaId: ids.length === 1 ? ids[0] : null,
       redId: rg.redId ?? null,

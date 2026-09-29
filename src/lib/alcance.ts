@@ -1,6 +1,11 @@
 import { db } from "./db";
 import type { Sesion } from "./auth";
 
+/** Pastores y líderes consolidadores gestionan la estructura de SUS iglesias. */
+export function esGestor(s: Sesion | null) {
+  return !!s && (s.rol === "PASTOR" || s.rol === "LIDER_CONSOLIDADOR");
+}
+
 /**
  * Alcance organizativo por rol, aplicado en el servidor.
  * - SUPERADMIN: todo (puede filtrar por iglesiaId explícita).

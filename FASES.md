@@ -11,8 +11,8 @@
 ## Pendiente
 
 - **Fase 6 — Alta de visitantes:** formulario (pastor/líder consolidador) con iglesia/red/grupo/consolidador y origen; asigna historial inicial.
-- **Fase 7 — Reporte del consolidador:** confirmar 1er/2do contacto y N visitas de amistad con `fecha_contacto` (vista `view_consolidador.png`).
-- **Fase 8 — Alertas:** configurar horas por estado (pastor, por iglesia) y avisos de visitantes vencidos.
+- **Fase 7 — Reporte del consolidador:** confirmar 1er/2do contacto y N visitas de amistad con `fecha_contacto` (vista `view_consolidador.png`). PENDIENTE: botones **Llenar reporte / Editar reporte** y **Coordinar visita** (hoy deshabilitados con aviso).
+- **Fase 8 — Alertas:** límites por transición configurables por el pastor en la página de iglesia (PUT solo pastor/superadmin); banner del consolidador por estado actual. Pendiente: avisos push/in-app de vencidos.
 - **Fase 9 — Roles operativos:** vistas y permisos finales de líder de red/grupo y consolidador raso.
 - **Fase 10 — Producción:** PostgreSQL administrado, variables en Vercel, prueba de instalación PWA en celular, `prisma migrate` en vez de `db push`.
 

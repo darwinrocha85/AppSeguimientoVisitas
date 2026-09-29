@@ -26,6 +26,8 @@ export type Sesion = {
   usuario: string;
   rol: Rol;
   iglesias: string[];
+  redId?: string | null;
+  grupoId?: string | null;
 };
 
 export type Iglesia = {
@@ -64,6 +66,7 @@ export type Resumen = {
     grupoId: string | null;
     total: number;
   }[];
+  alertas: { iglesiaId: string; estado: string; maxHoras: number }[];
 };
 
 /* ---------- Iconos vectoriales (sin emojis) ---------- */
@@ -224,15 +227,19 @@ export function TarjetaEstado({
   valor,
   pie,
   tinta,
+  href,
+  detalle,
 }: {
   icono: ReactNode;
   titulo: string;
   valor: number | string;
   pie: string;
   tinta: string;
+  href?: string;
+  detalle?: string;
 }) {
-  return (
-    <div className="rounded-2xl border border-sand/60 bg-white p-4">
+  const contenido = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <span
           className={`flex h-10 w-10 items-center justify-center rounded-xl ${tinta}`}
@@ -247,6 +254,25 @@ export function TarjetaEstado({
         {valor}
       </p>
       <p className="mt-1 text-[13px] font-medium text-zinc-600">{pie}</p>
+      {detalle && (
+        <p className="mt-0.5 text-xs font-bold text-zinc-500">{detalle}</p>
+      )}
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        title={`Ver visitantes: ${titulo}`}
+        className="block rounded-2xl border border-sand/60 bg-white p-4 transition-all duration-200 hover:border-navy/30 hover:shadow-md"
+      >
+        {contenido}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-sand/60 bg-white p-4">
+      {contenido}
     </div>
   );
 }
@@ -266,7 +292,7 @@ export function Vacio({
   );
 }
 
-const TABS = [
+const TABS_BASE = [
   { href: "/tablero/dashboard", etiqueta: "Dashboard", icono: I.dashboard },
   { href: "/tablero/visitantes", etiqueta: "Visitantes", icono: I.visitantes },
   { href: "/tablero/usuarios", etiqueta: "Usuarios", icono: I.usuarioMas },
@@ -368,13 +394,27 @@ export function Cascaron({ children }: { children: ReactNode }) {
         usuario: s.usuario,
         rol: s.rol,
         iglesias: s.iglesias ?? [],
+        redId: s.redId ?? null,
+        grupoId: s.grupoId ?? null,
       });
       const ri = await fetch("/api/iglesias");
       if (ri.ok) {
         const lista: Iglesia[] = await ri.json();
         setIglesias(lista);
-        // "Todas" por defecto con la estadística global del alcance.
-        setIglesiaId("");
+        // Roles operativos bajos: pills bloqueados a su alcance.
+        if (
+          (s.rol === "LIDER_RED" ||
+            s.rol === "LIDER_GRUPO" ||
+            s.rol === "CONSOLIDADOR") &&
+          lista.length > 0
+        ) {
+          setIglesiaId(lista[0].id);
+          if (s.redId) setRed(s.redId);
+          if (s.grupoId) setGrupo(s.grupoId);
+        } else {
+          // "Todas" por defecto con la estadística global del alcance.
+          setIglesiaId("");
+        }
       }
       setCargando(false);
     }
@@ -396,6 +436,18 @@ export function Cascaron({ children }: { children: ReactNode }) {
       (resumen?.grupos ?? []).filter((g) => red === "todas" || g.redId === red),
     [resumen, red]
   );
+  // Pills bloqueados al alcance propio (líder red/grupo y consolidador).
+  const alcanceFijo =
+    !!sesion &&
+    (sesion.rol === "LIDER_RED" ||
+      sesion.rol === "LIDER_GRUPO" ||
+      sesion.rol === "CONSOLIDADOR");
+  const esRaso = sesion?.rol === "CONSOLIDADOR";
+  const redFija = alcanceFijo && !!sesion?.redId;
+  const grupoFijo =
+    alcanceFijo &&
+    !!sesion?.grupoId &&
+    (sesion?.rol === "LIDER_GRUPO" || sesion?.rol === "CONSOLIDADOR");
   const rasosDisponibles = useMemo(
     () =>
       (resumen?.consolidadores ?? []).filter(
@@ -542,7 +594,10 @@ export function Cascaron({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
           {/* Tabs primero, filtros después */}
           <nav aria-label="Secciones" className="no-print flex flex-wrap gap-2">
-            {TABS.map((t) => {
+            {(sesion?.rol === "CONSOLIDADOR"
+              ? TABS_BASE.filter((t) => t.href !== "/tablero/usuarios")
+              : TABS_BASE
+            ).map((t) => {
               const activo = pathname === t.href;
               return (
                 <Link
@@ -563,7 +618,32 @@ export function Cascaron({ children }: { children: ReactNode }) {
           </nav>
 
           {/* Filtros (en la página de iglesia viene pre-seleccionada y navega al cambiar) */}
-          <div className="no-print flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {esRaso ? (
+              <span className="flex min-h-[44px] flex-wrap items-center gap-x-2 gap-y-0.5 rounded-full border border-sand bg-white px-4 py-1 text-sm">
+                <span className="text-[11px] font-black tracking-[0.08em] text-navy">
+                  IGLESIA:
+                </span>
+                <span className="font-semibold text-navy">
+                  {iglesias.find((i) => i.id === iglesiaId)?.nombre ?? "—"}
+                </span>
+                <span className="text-zinc-300">•</span>
+                <span className="text-[11px] font-black tracking-[0.08em] text-grape">
+                  RED:
+                </span>
+                <span className="font-semibold text-navy">
+                  {resumen?.redes.find((r) => r.id === sesion?.redId)?.nombre ?? "—"}
+                </span>
+                <span className="text-zinc-300">•</span>
+                <span className="text-[11px] font-black tracking-[0.08em] text-[#1F7A4B]">
+                  GRUPO:
+                </span>
+                <span className="font-semibold text-navy">
+                  {resumen?.grupos.find((g) => g.id === sesion?.grupoId)?.nombre ?? "—"}
+                </span>
+              </span>
+            ) : (
+            <>
             <Filtro
               etiqueta="Iglesia"
               colorEtiqueta="text-navy"
@@ -579,10 +659,12 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 }
               }}
               aria="Filtrar por iglesia"
+              deshabilitado={alcanceFijo || iglesias.length === 0}
               opciones={
                 iglesias.length > 0
                   ? [
-                      ...(!pathname.startsWith("/tablero/iglesias/")
+                      ...(!pathname.startsWith("/tablero/iglesias/") &&
+                      !alcanceFijo
                         ? [{ value: "", texto: "Todas" }]
                         : []),
                       ...iglesias.map((i) => ({
@@ -604,7 +686,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 setConsolidador("todos");
               }}
               aria="Filtrar por red"
-              deshabilitado={(resumen?.redes.length ?? 0) === 0}
+              deshabilitado={redFija || (resumen?.redes.length ?? 0) === 0}
               opciones={[
                 { value: "todas", texto: "Todas" },
                 ...(resumen?.redes.map((r) => ({
@@ -623,7 +705,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 setConsolidador("todos");
               }}
               aria="Filtrar por grupo"
-              deshabilitado={gruposDisponibles.length === 0}
+              deshabilitado={grupoFijo || gruposDisponibles.length === 0}
               opciones={[
                 { value: "todos", texto: "Todos" },
                 ...gruposDisponibles.map((g) => ({
@@ -632,7 +714,6 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 })),
               ]}
             />
-            {sesion?.rol !== "CONSOLIDADOR" && (
             <Filtro
               etiqueta="Consolidador"
               colorEtiqueta="text-[#8A6E14]"
@@ -649,6 +730,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 })),
               ]}
             />
+            </>
             )}
           </div>
 

@@ -1,9 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { I, Icono, TarjetaEstado, useTablero } from "../ui";
 import { formatearTelefono, soloDigitos } from "@/lib/telefono";
+
+type PersonaEquipo = {
+  id: string;
+  nombre: string;
+  apellido: string;
+  telefono: string | null;
+  rol: string;
+  detalle: string | null;
+};
+
+type Equipo = {
+  pastor?: PersonaEquipo | null;
+  liderConsolidador?: PersonaEquipo | null;
+  liderRed?: PersonaEquipo | null;
+  liderGrupo?: PersonaEquipo | null;
+  consolidadores?: PersonaEquipo[];
+  grupos?: { id: string; nombre: string; personas: PersonaEquipo[] }[];
+} | null;
+
+function FichaPersona({ p }: { p: PersonaEquipo }) {
+  return (
+    <li className="flex min-w-[240px] snap-start items-center gap-3 rounded-xl border border-sand/70 bg-paper p-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy/10 text-base font-black text-navy">
+        {p.nombre.charAt(0).toUpperCase()}
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-[14px] font-bold text-navy">
+          {p.nombre} {p.apellido}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-zinc-500">
+          {p.detalle ?? ""}
+          {p.telefono ? ` • ${formatearTelefono(p.telefono)}` : ""}
+        </span>
+      </span>
+    </li>
+  );
+}
 
 /* 4 estados literales del seguimiento (decisión confirmada) */
 const ESTADOS = [
@@ -62,6 +99,18 @@ export default function Dashboard() {
   const [errorEdit, setErrorEdit] = useState("");
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [eliminando, setEliminando] = useState(false);
+  const [equipo, setEquipo] = useState<Equipo>(null);
+
+  useEffect(() => {
+    async function cargarEquipo() {
+      const r = await fetch("/api/tablero/equipo");
+      if (r.ok) {
+        const j = await r.json();
+        setEquipo(j.equipo);
+      }
+    }
+    void cargarEquipo();
+  }, []);
 
   async function crearIglesia(e: React.FormEvent) {
     e.preventDefault();
@@ -146,6 +195,46 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
+      {equipo && (
+        <section className="rounded-2xl border border-sand/60 bg-white p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-grape text-white">
+              <Icono className="h-5 w-5">{I.usuarioMas}</Icono>
+            </span>
+            <div className="leading-tight">
+              <h2 className="text-[15px] font-black text-navy">Mi equipo</h2>
+              <p className="text-xs text-zinc-500">
+                Quiénes te acompañan en tu alcance
+              </p>
+            </div>
+          </div>
+          <ul className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1">
+            {[equipo.pastor, equipo.liderConsolidador, equipo.liderRed, equipo.liderGrupo]
+              .filter((p): p is PersonaEquipo => !!p)
+              .map((p) => (
+                <FichaPersona key={p.id} p={p} />
+              ))}
+            {(equipo.consolidadores ?? []).map((p) => (
+              <FichaPersona key={p.id} p={p} />
+            ))}
+          </ul>
+          {(equipo.grupos ?? []).map((g) => (
+            <div key={g.id} className="mt-3">
+              <h3 className="text-[13px] font-black text-navy">{g.nombre}</h3>
+              {g.personas.length === 0 ? (
+                <p className="text-xs text-zinc-500">Sin personas todavía.</p>
+              ) : (
+                <ul className="mt-1.5 flex snap-x gap-2 overflow-x-auto pb-1">
+                  {g.personas.map((p) => (
+                    <FichaPersona key={p.id} p={p} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {ESTADOS.map((e) => (
           <TarjetaEstado
@@ -155,10 +244,12 @@ export default function Dashboard() {
             valor={resumen?.porEstado[e.clave] ?? 0}
             pie={e.pie}
             tinta={e.tinta}
+            href={`/tablero/visitantes?estado=${e.clave}`}
           />
         ))}
       </div>
 
+      {sesion?.rol !== "CONSOLIDADOR" && (
       <section className="overflow-hidden rounded-2xl border border-sand/60 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand/60 p-4">
           <div className="flex items-center gap-3">
@@ -356,6 +447,7 @@ export default function Dashboard() {
           </ul>
         )}
       </section>
+      )}
 
     </div>
   );

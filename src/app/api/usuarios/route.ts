@@ -3,8 +3,11 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
-import { esSuperadmin, puedeSuperadminCrearRol } from "@/lib/permisos";
+import { esGestor } from "@/lib/alcance";
+import { esSuperadmin } from "@/lib/permisos";
 import { TELEFONO_AYUDA, TELEFONO_REGEX } from "@/lib/telefono";
+
+const ROLES_BAJOS = ["LIDER_RED", "LIDER_GRUPO", "CONSOLIDADOR"] as const;
 
 const EsquemaCrear = z.object({
   usuario: z.string().min(3),
@@ -20,6 +23,8 @@ const EsquemaCrear = z.object({
     "CONSOLIDADOR",
   ]),
   iglesiaIds: z.array(z.string()).min(1).max(2),
+  redId: z.string().nullable().optional(),
+  grupoId: z.string().nullable().optional(),
 });
 
 // Nunca devolver el hash. El teléfono/nombre solo para el alcance autorizado.
@@ -31,7 +36,9 @@ function sinHash(u: Record<string, unknown>) {
 
 export async function GET(req: Request) {
   const s = await leerSesion();
-  if (!esSuperadmin(s))
+  if (!s) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  const gestor = esGestor(s);
+  if (!esSuperadmin(s) && !gestor)
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
 
   const url = new URL(req.url);
@@ -39,12 +46,19 @@ export async function GET(req: Request) {
   const qRed = url.searchParams.get("redId");
   const qGrupo = url.searchParams.get("grupoId");
   const qConso = url.searchParams.get("consolidadorId");
+  const esSA = esSuperadmin(s);
+  // Gestores: todo se intersecta con SUS iglesias (nunca más allá).
+  const propias = esSA ? null : s.iglesias;
 
   // Filtros validados (lo inválido se ignora sin ampliar nada).
   let iglesiaId: string | undefined;
   if (qIglesia) {
     const ig = await db.iglesia.findFirst({
-      where: { id: qIglesia, activo: true },
+      where: {
+        id: qIglesia,
+        activo: true,
+        ...(propias ? { id: { in: propias } } : {}),
+      },
       select: { id: true },
     });
     if (ig) iglesiaId = ig.id;
@@ -52,7 +66,11 @@ export async function GET(req: Request) {
   let red: { id: string; iglesiaId: string } | null = null;
   if (qRed) {
     red = await db.red.findFirst({
-      where: { id: qRed, activo: true, ...(iglesiaId ? { iglesiaId } : {}) },
+      where: {
+        id: qRed,
+        activo: true,
+        ...(iglesiaId ? { iglesiaId } : propias ? { iglesiaId: { in: propias } } : {}),
+      },
       select: { id: true, iglesiaId: true },
     });
   }
@@ -62,7 +80,7 @@ export async function GET(req: Request) {
       where: {
         id: qGrupo,
         activo: true,
-        ...(iglesiaId ? { iglesiaId } : {}),
+        ...(iglesiaId ? { iglesiaId } : propias ? { iglesiaId: { in: propias } } : {}),
         ...(red ? { redId: red.id } : {}),
       },
       select: { id: true, iglesiaId: true, redId: true },
@@ -72,14 +90,25 @@ export async function GET(req: Request) {
   let iglesiasConso: string[] | null = null;
   if (qConso) {
     const c = await db.usuario.findFirst({
-      where: { id: qConso, activo: true, rol: "CONSOLIDADOR" },
+      where: {
+        id: qConso,
+        activo: true,
+        rol: "CONSOLIDADOR",
+        ...(propias
+          ? { iglesias: { some: { iglesiaId: { in: propias } } } }
+          : {}),
+      },
       select: { iglesias: { select: { iglesiaId: true } } },
     });
-    if (c) iglesiasConso = c.iglesias.map((x) => x.iglesiaId);
+    if (c)
+      iglesiasConso = propias
+        ? c.iglesias.map((x) => x.iglesiaId).filter((id) => propias.includes(id))
+        : c.iglesias.map((x) => x.iglesiaId);
   }
 
   // Pastor y líder consolidador son nivel iglesia (visibles dentro de la
   // iglesia filtrada); el resto debe coincidir con red/grupo.
+  // Superadmin ve pastores/líderes; los gestores ven todos los roles de su alcance.
   const CADENA: ("PASTOR" | "LIDER_CONSOLIDADOR" | "SUPERADMIN")[] = [
     "PASTOR",
     "LIDER_CONSOLIDADOR",
@@ -88,8 +117,11 @@ export async function GET(req: Request) {
   const enIglesia = (id: string) => ({ iglesias: { some: { iglesiaId: id } } });
   const usuarios = await db.usuario.findMany({
     where: {
-      rol: { in: CADENA },
+      ...(esSA ? { rol: { in: CADENA } } : { rol: { not: "SUPERADMIN" } }),
       activo: true,
+      ...(propias && !iglesiaId && !iglesiasConso
+        ? { iglesias: { some: { iglesiaId: { in: propias } } } }
+        : {}),
       ...(iglesiaId ? enIglesia(iglesiaId) : {}),
       ...(iglesiasConso ? { iglesias: { some: { iglesiaId: { in: iglesiasConso } } } } : {}),
       ...(red
@@ -125,6 +157,8 @@ export async function GET(req: Request) {
   return NextResponse.json(
     usuarios.map((u) => ({
       ...sinHash(u),
+      redId: u.redId ?? null,
+      grupoId: u.grupoId ?? null,
       red: u.redId ? (nombreRed[u.redId] ?? null) : null,
       grupo: u.grupoId ? (nombreGrupo[u.grupoId] ?? null) : null,
     }))
@@ -133,22 +167,74 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const s = await leerSesion();
-  if (!esSuperadmin(s))
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const datos = EsquemaCrear.safeParse(await req.json().catch(() => null));
   if (!datos.success)
     return NextResponse.json(
       { error: "Datos inválidos", detalle: datos.error.flatten() },
       { status: 400 }
     );
-  if (!puedeSuperadminCrearRol(datos.data.rol))
+  const d = datos.data;
+  const esBajo = (ROLES_BAJOS as readonly string[]).includes(d.rol);
+  // Pastor, líder consolidador, líder de red y líder de grupo: teléfono obligatorio.
+  if (
+    ["PASTOR", "LIDER_CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO"].includes(
+      d.rol
+    ) &&
+    !d.telefono
+  ) {
     return NextResponse.json(
-      { error: "Superadmin solo puede crear pastor y líder consolidador" },
-      { status: 403 }
+      { error: "Teléfono obligatorio (9 dígitos)" },
+      { status: 400 }
     );
+  }
+
+  if (esSuperadmin(s)) {
+    // Superadmin solo crea pastor y líder consolidador (máx 2 iglesias).
+    if (!["PASTOR", "LIDER_CONSOLIDADOR"].includes(d.rol))
+      return NextResponse.json(
+        { error: "Superadmin solo puede crear pastor y líder consolidador" },
+        { status: 403 }
+      );
+  } else if (esGestor(s)) {
+    // Pastor/líder consolidador: solo roles bajos de SUS iglesias (una sola).
+    if (!esBajo)
+      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+    if (d.iglesiaIds.length !== 1 || !s.iglesias.includes(d.iglesiaIds[0]))
+      return NextResponse.json(
+        { error: "Una sola iglesia de tu alcance" },
+        { status: 400 }
+      );
+  } else {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  }
+
+  // Validar red/grupo para roles bajos (deben pertenecer a la iglesia).
+  const iglesiaId = d.iglesiaIds[0];
+  if (d.redId) {
+    const r = await db.red.findFirst({
+      where: { id: d.redId, iglesiaId, activo: true },
+      select: { id: true },
+    });
+    if (!r)
+      return NextResponse.json({ error: "Red inválida" }, { status: 400 });
+  }
+  if (d.grupoId) {
+    const g = await db.grupo.findFirst({
+      where: {
+        id: d.grupoId,
+        iglesiaId,
+        activo: true,
+        ...(d.redId ? { redId: d.redId } : {}),
+      },
+      select: { id: true },
+    });
+    if (!g)
+      return NextResponse.json({ error: "Grupo inválido" }, { status: 400 });
+  }
 
   const existe = await db.usuario.findUnique({
-    where: { usuario: datos.data.usuario },
+    where: { usuario: d.usuario },
   });
   if (existe)
     return NextResponse.json(
@@ -156,17 +242,19 @@ export async function POST(req: Request) {
       { status: 409 }
     );
 
-  const passwordHash = await bcrypt.hash(datos.data.contrasena, 10);
+  const passwordHash = await bcrypt.hash(d.contrasena, 10);
   const creado = await db.usuario.create({
     data: {
-      usuario: datos.data.usuario,
+      usuario: d.usuario,
       passwordHash,
-      nombre: datos.data.nombre,
-      apellido: datos.data.apellido,
-      telefono: datos.data.telefono,
-      rol: datos.data.rol,
+      nombre: d.nombre,
+      apellido: d.apellido,
+      telefono: d.telefono,
+      rol: d.rol,
+      redId: d.redId ?? null,
+      grupoId: d.grupoId ?? null,
       iglesias: {
-        create: datos.data.iglesiaIds.map((iglesiaId) => ({ iglesiaId })),
+        create: d.iglesiaIds.map((id) => ({ iglesiaId: id })),
       },
     },
     include: { iglesias: { include: { iglesia: true } } },
