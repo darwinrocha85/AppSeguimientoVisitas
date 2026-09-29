@@ -32,9 +32,37 @@ node prisma/seed.mjs
 
 - Usuario: `SuperAdmin` / Contraseña: `Admin1234`
 - Para otros valores: `$env:SEED_SUPERADMIN="otro"; $env:SEED_PASSWORD="otraClave123"`
-- El seed crea 4 iglesias (Central, Norte, Sur, Este), pastor.juan, lider.maria, líderes de red/grupo, 2 consolidadores y 6 visitantes con historial.
-- Usuarios ficticios (clave `Visita123`): `pastor.juan`, `lider.maria`, `lider.familias`, `lider.gracia`, `conso.diego`, `conso.luz`.
+- El seed crea 4 iglesias (Central, Norte, Sur, Este) con sus redes, grupos, pastores, líderes y 200 visitantes con 90 días de historial.
 - Para regenerar desde cero: borra `prisma/dev.db`, repite pasos 3 y 4.
+
+## Usuarios de demostración (clave común: `Visita123`)
+
+| Usuario | Contraseña | Rol | Iglesias |
+|---|---|---|---|
+| SuperAdmin | Admin1234 | Superadmin | Todas |
+| pastor.juan | Visita123 | Pastor | Central, Norte |
+| pastor.luis | Visita123 | Pastor | Sur, Este |
+| lider.maria | Visita123 | Líder consolidador | Central, Norte |
+| lider.jose | Visita123 | Líder consolidador | Sur, Este |
+| lider.familias | Visita123 | Líder de red | Central (Red Familias) |
+| lider.jovenes | Visita123 | Líder de red | Central (Red Jóvenes) |
+| lider.norte | Visita123 | Líder de red | Norte |
+| lider.sur | Visita123 | Líder de red | Sur |
+| lider.redeste | Visita123 | Líder de red | Este |
+| lider.gracia | Visita123 | Líder de grupo | Central (Gracia - 101) |
+| lider.fe | Visita123 | Líder de grupo | Central (Fe - 102) |
+| lider.fuego | Visita123 | Líder de grupo | Central (Jóvenes Fuego) |
+| lider.norte201 | Visita123 | Líder de grupo | Norte |
+| lider.sur301 | Visita123 | Líder de grupo | Sur |
+| lider.este401 | Visita123 | Líder de grupo | Este |
+| conso.diego | Visita123 | Consolidador | Central (Gracia - 101) |
+| conso.pablo | Visita123 | Consolidador | Central (Fe - 102) |
+| conso.luz | Visita123 | Consolidador | Central (Jóvenes Fuego) |
+| conso.sara | Visita123 | Consolidador | Central (Jóvenes Fuego) |
+| conso.elena | Visita123 | Consolidador | Norte |
+| conso.marco | Visita123 | Consolidador | Sur |
+| conso.este1 | Visita123 | Consolidador | Este |
+| conso.este2 | Visita123 | Consolidador | Este |
 
 ## 5. Servidor de desarrollo
 

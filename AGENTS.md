@@ -62,3 +62,18 @@
 
 ### diseño
 - en la  carpeta images_test hay tres imagen de diseños aprobados. 
+
+## Decisiones confirmadas (no reabrir sin preguntar)
+
+- **Superadmin restringido:** crea y edita solo iglesia, pastor y líder consolidador (y los asigna, máx 2 iglesias). No gestiona redes, grupos, rasos ni visitantes. Ve todo. Desactiva (lógico) a cualquiera menos a otro superadmin.
+- **Pastor y líder consolidador:** ambos crean/editan/desactivan líder de red, líder de grupo, consolidador raso y visitantes. El líder consolidador nunca toca al pastor. El pastor también puede crear líderes consolidadores.
+- **Borrado siempre lógico:** iglesias, redes, grupos, visitantes y usuarios se desactivan (`activo=false`) en cascada; nada se borra físicamente. En la página de iglesia no se elimina pastor ni líder consolidador.
+- **Estadísticas por `fecha_cambio_estado`:** cada cambio (incluida la creación) genera entrada en el historial con `de`/`a`. En un rango cuenta cada visitante una vez, en el estado de su último cambio.
+- **% Éxito:** visitantes con ≥1 avance real dentro del rango Y dentro de las horas que el pastor fijó por estado (alerta configurable por iglesia y estado, default 100h) / total en rango.
+- **Estados literales en tarjetas:** Desea contactar, Primer contacto, Segundo contacto, Visita de amistad (no Nuevos/En proceso/Meta).
+- **Origen (canal de captación):** Operación Mateo 25, Evangelismo, 1ra visita iglesia, 1ra visita grupo; ampliable por iglesia.
+- **Reporte = avance con `fecha_contacto`:** primer contacto, segundo contacto y N visitas de amistad, cada uno con su fecha.
+- **Teléfonos:** 9 dígitos, formato `607 35 00 44` (iglesia, usuarios y visitantes; opcional salvo que se indique).
+- **Filtros en cascada:** Iglesia (registradas, default Todas) → redes de esa iglesia → grupos de esa red → consolidadores de ese grupo. Sin datos, el dropdown se inhabilita. Todo filtra estadísticas y listas.
+- **Dirección del cambio:** desde el usuario se cambia iglesia; desde la iglesia no se cambian usuarios (solo lectura + desactivar roles bajos).
+- **Diseño:** solo el lenguaje visual de `images_test` y del sitio de referencia (paleta navy #204B6E, dorado #C9A227, vino #A91E32); no clonar contenido.

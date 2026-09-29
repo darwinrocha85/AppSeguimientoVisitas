@@ -438,7 +438,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
     <Ctx.Provider value={valor}>
       <div className="min-h-screen text-navy">
         {/* Barra superior */}
-        <div className="sticky top-0 z-40 w-full bg-navy text-white shadow-[0_8px_24px_-12px_rgba(32,75,110,0.28)]">
+        <div className="no-print sticky top-0 z-40 w-full bg-navy text-white shadow-[0_8px_24px_-12px_rgba(32,75,110,0.28)]">
           <div className="relative mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 overflow-hidden px-4 md:px-6">
             <div
               aria-hidden="true"
@@ -541,7 +541,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
 
         <main className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
           {/* Tabs primero, filtros después */}
-          <nav aria-label="Secciones" className="flex flex-wrap gap-2">
+          <nav aria-label="Secciones" className="no-print flex flex-wrap gap-2">
             {TABS.map((t) => {
               const activo = pathname === t.href;
               return (
@@ -563,7 +563,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
           </nav>
 
           {/* Filtros (en la página de iglesia viene pre-seleccionada y navega al cambiar) */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="no-print flex flex-wrap items-center gap-2">
             <Filtro
               etiqueta="Iglesia"
               colorEtiqueta="text-navy"

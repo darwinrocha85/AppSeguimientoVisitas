@@ -30,7 +30,7 @@ const campo =
   "min-h-[44px] rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none placeholder:text-[#B8A99A]/70 focus:border-navy/30 focus:ring-4 focus:ring-navy/[0.06]";
 
 export default function Usuarios() {
-  const { iglesias, setIglesiaId, setRed, setGrupo, setConsolidador } =
+  const { iglesias, setIglesiaId, setRed, setGrupo, setConsolidador, iglesiaId, red, grupo, consolidador } =
     useTablero();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [restringido, setRestringido] = useState(false);
@@ -46,7 +46,13 @@ export default function Usuarios() {
   const [perfil, setPerfil] = useState<Usuario | null>(null);
 
   async function cargar() {
-    const r = await fetch("/api/usuarios");
+    const qs = new URLSearchParams();
+    if (iglesiaId) qs.set("iglesiaId", iglesiaId);
+    if (red !== "todas") qs.set("redId", red);
+    if (grupo !== "todos") qs.set("grupoId", grupo);
+    if (consolidador !== "todos") qs.set("consolidadorId", consolidador);
+    const texto = qs.toString();
+    const r = await fetch(`/api/usuarios${texto ? `?${texto}` : ""}`);
     if (r.status === 403) {
       setRestringido(true);
       setCargando(false);
@@ -57,10 +63,24 @@ export default function Usuarios() {
   }
 
   useEffect(() => {
-    // Carga inicial de usuarios del alcance.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void cargar();
-  }, []);
+    async function inicial() {
+      const qs = new URLSearchParams();
+      if (iglesiaId) qs.set("iglesiaId", iglesiaId);
+      if (red !== "todas") qs.set("redId", red);
+      if (grupo !== "todos") qs.set("grupoId", grupo);
+      if (consolidador !== "todos") qs.set("consolidadorId", consolidador);
+      const texto = qs.toString();
+      const r = await fetch(`/api/usuarios${texto ? `?${texto}` : ""}`);
+      if (r.status === 403) {
+        setRestringido(true);
+        setCargando(false);
+        return;
+      }
+      if (r.ok) setUsuarios(await r.json());
+      setCargando(false);
+    }
+    void inicial();
+  }, [iglesiaId, red, grupo, consolidador]);
 
   function irAIglesia(id: string) {
     setIglesiaId(id);
@@ -198,6 +218,8 @@ export default function Usuarios() {
                   <span className="mt-0.5 block truncate text-xs text-zinc-500">
                     @{u.usuario}
                     {u.telefono && ` • ${formatearTelefono(u.telefono)}`}
+                    {[u.red, u.grupo].filter(Boolean).length > 0 &&
+                      ` • ${[u.red, u.grupo].filter(Boolean).join(" • ")}`}
                   </span>
                   {u.iglesias.length > 0 && (
                     <span className="mt-0.5 block truncate text-xs">

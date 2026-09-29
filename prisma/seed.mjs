@@ -60,11 +60,13 @@ async function asegurarVisitante(d, historial) {
   });
   if (v) return v;
   v = await db.visitante.create({ data: d });
+  let previo = null;
   for (const h of historial) {
+    const de = h.de ?? previo;
     await db.visitanteHistorial.create({
       data: {
         visitanteId: v.id,
-        deEstado: h.de ?? null,
+        deEstado: de,
         aEstado: h.a,
         fechaCambio: h.cambio,
         fechaContacto: h.contacto ?? null,
@@ -72,6 +74,7 @@ async function asegurarVisitante(d, historial) {
         observaciones: h.obs ?? null,
       },
     });
+    previo = h.a;
   }
   return v;
 }
@@ -119,6 +122,8 @@ async function main() {
   );
   await asegurarIglesia("I. Cuadrangular Sur", "Av. Sur 789", "600555666");
   await asegurarIglesia("I. Cuadrangular Este", "Jr. Este 321", "600777888");
+  const sur = await db.iglesia.findFirst({ where: { nombre: "I. Cuadrangular Sur" } });
+  const este = await db.iglesia.findFirst({ where: { nombre: "I. Cuadrangular Este" } });
 
   // Redes y grupos (Central)
   let fam = await db.red.findFirst({
@@ -137,18 +142,32 @@ async function main() {
       data: { nombre: "Red Jóvenes", iglesiaId: central.id },
     });
   }
-  async function grupo(nombre, redId) {
+  async function grupo(nombre, redId, iglesia) {
     let g = await db.grupo.findFirst({ where: { nombre, redId } });
     if (!g) {
       g = await db.grupo.create({
-        data: { nombre, redId, iglesiaId: central.id },
+        data: { nombre, redId, iglesiaId: iglesia.id },
       });
     }
     return g;
   }
-  const gracia = await grupo("Grupo Gracia - 101", fam.id);
-  const fe = await grupo("Grupo Fe - 102", fam.id);
-  const fuego = await grupo("Grupo Jóvenes Fuego", jov.id);
+  const gracia = await grupo("Grupo Gracia - 101", fam.id, central);
+  const fe = await grupo("Grupo Fe - 102", fam.id, central);
+  const fuego = await grupo("Grupo Jóvenes Fuego", jov.id, central);
+
+  async function red(nombre, iglesia) {
+    let r = await db.red.findFirst({ where: { nombre, iglesiaId: iglesia.id } });
+    if (!r) {
+      r = await db.red.create({ data: { nombre, iglesiaId: iglesia.id } });
+    }
+    return r;
+  }
+  const redNorte = await red("Red Norte", norte);
+  const redSur = await red("Red Sur", sur);
+  const redEste = await red("Red Este", este);
+  const gNorte = await grupo("Grupo Norte - 201", redNorte.id, norte);
+  const gSur = await grupo("Grupo Sur - 301", redSur.id, sur);
+  const gEste = await grupo("Grupo Este - 401", redEste.id, este);
 
   // Personas ficticias (clave común solo para pruebas locales)
   const hash = await bcrypt.hash("Visita123", 10);
@@ -166,7 +185,23 @@ async function main() {
     apellido: "López",
     telefono: "622333444",
     rol: "LIDER_CONSOLIDADOR",
-    iglesiaIds: [central.id],
+    iglesiaIds: [central.id, norte.id],
+  });
+  const pastorLuis = await asegurarUsuario(hash, {
+    usuario: "pastor.luis",
+    nombre: "Luis",
+    apellido: "Fernando",
+    telefono: "612333444",
+    rol: "PASTOR",
+    iglesiaIds: [sur.id, este.id],
+  });
+  await asegurarUsuario(hash, {
+    usuario: "lider.jose",
+    nombre: "José",
+    apellido: "Martín",
+    telefono: "623444555",
+    rol: "LIDER_CONSOLIDADOR",
+    iglesiaIds: [sur.id, este.id],
   });
   const lidRed = await asegurarUsuario(hash, {
     usuario: "lider.familias",
@@ -210,6 +245,98 @@ async function main() {
     iglesiaIds: [central.id],
     grupoId: fuego.id,
   });
+  const pablo = await asegurarUsuario(hash, {
+    usuario: "conso.pablo",
+    nombre: "Pablo",
+    apellido: "Núñez",
+    telefono: "655666777",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [central.id],
+    grupoId: fe.id,
+  });
+  const sara = await asegurarUsuario(hash, {
+    usuario: "conso.sara",
+    nombre: "Sara",
+    apellido: "Vidal",
+    telefono: "666777888",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [central.id],
+    grupoId: fuego.id,
+  });
+  const elena = await asegurarUsuario(hash, {
+    usuario: "conso.elena",
+    nombre: "Elena",
+    apellido: "Soto",
+    telefono: "677888999",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [norte.id],
+    grupoId: gNorte.id,
+  });
+  const marco = await asegurarUsuario(hash, {
+    usuario: "conso.marco",
+    nombre: "Marco",
+    apellido: "Reyes",
+    telefono: "688999000",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [sur.id],
+    grupoId: gSur.id,
+  });
+  const este1 = await asegurarUsuario(hash, {
+    usuario: "conso.este1",
+    nombre: "Ruth",
+    apellido: "Cordero",
+    telefono: "699000111",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [este.id],
+    grupoId: gEste.id,
+  });
+  const este2 = await asegurarUsuario(hash, {
+    usuario: "conso.este2",
+    nombre: "Samuel",
+    apellido: "Ortiz",
+    telefono: "699000222",
+    rol: "CONSOLIDADOR",
+    iglesiaIds: [este.id],
+    grupoId: gEste.id,
+  });
+
+  // Líderes de red y grupo restantes (uno por nivel para la demo)
+  async function liderRed(usuario, nombre, apellido, iglesia, redObj) {
+    const u = await asegurarUsuario(hash, {
+      usuario,
+      nombre,
+      apellido,
+      rol: "LIDER_RED",
+      iglesiaIds: [iglesia.id],
+      redId: redObj.id,
+    });
+    await db.red.update({ where: { id: redObj.id }, data: { liderId: u.id } });
+    return u;
+  }
+  async function liderGrupo(usuario, nombre, apellido, iglesia, grupoObj) {
+    const u = await asegurarUsuario(hash, {
+      usuario,
+      nombre,
+      apellido,
+      rol: "LIDER_GRUPO",
+      iglesiaIds: [iglesia.id],
+      grupoId: grupoObj.id,
+    });
+    await db.grupo.update({
+      where: { id: grupoObj.id },
+      data: { liderId: u.id },
+    });
+    return u;
+  }
+  await liderRed("lider.jovenes", "Carmen", "Díaz", central, jov);
+  await liderRed("lider.norte", "Hugo", "Molina", norte, redNorte);
+  await liderRed("lider.sur", "Irene", "Vargas", sur, redSur);
+  await liderRed("lider.redeste", "Tomás", "Ramos", este, redEste);
+  await liderGrupo("lider.fe", "Paula", "Serra", central, fe);
+  await liderGrupo("lider.fuego", "Andrés", "Blanco", central, fuego);
+  await liderGrupo("lider.norte201", "Mario", "Suárez", norte, gNorte);
+  await liderGrupo("lider.sur301", "Julia", "Aguilar", sur, gSur);
+  await liderGrupo("lider.este401", "David", "Delgado", este, gEste);
 
   // Visitantes ficticios
   const V = (o) => ({
@@ -381,6 +508,119 @@ async function main() {
       },
     ]
   );
+
+  // --- Generador masivo determinista: ~200 visitantes, 90 días de historia ---
+  // Vertical = nº de visitantes, horizontal = fechas. Permite ver todas las
+  // opciones (estados, redes, grupos, consolidadores, rangos con movimiento).
+  const cuantos = await db.visitante.count();
+  if (cuantos < 200) {
+    let sem = 987654321;
+    const rnd = () => (sem = (sem * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const ent = (n) => Math.floor(rnd() * n);
+    const NOMBRES = ["Pedro", "Lucía", "Carlos", "Ana", "Marta", "Laura", "Diego", "Carmen", "José", "María", "Juan", "Elena", "Pablo", "Sara", "Marco", "Luz", "Raúl", "Nadia", "Hugo", "Irene", "Tomás", "Paula", "Andrés", "Sofía", "Mario", "Julia", "David", "Clara", "Iván", "Rosa"];
+    const APELLIDOS = ["Sánchez", "Fernández", "Gómez", "Pérez", "Ruiz", "Martínez", "Torres", "López", "Ríos", "Díaz", "Moreno", "Álvarez", "Romero", "Navarro", "Serra", "Vidal", "Soto", "Reyes", "Cruz", "Ortega", "Molina", "Vargas", "Castillo", "Ramos", "Blanco", "Suárez", "Herrera", "Aguilar", "Delgado", "Marín"];
+    const ZONAS = ["Centro", "Norte", "Sur", "Este", "Gracia", "Sants", "Barrio Alto", "La Plaza"];
+    const INVITAN = ["Campaña en la plaza", "Un amigo", "Folleto", "Redes sociales", null, null];
+    const ORIGENES = Object.values(origen);
+    const CADENA = ["DESEA_SER_CONTACTADO", "PRIMER_CONTACTO", "SEGUNDO_CONTACTO", "VISITA_AMISTAD"];
+    const RASOS = { [gracia.id]: [diego, pablo], [fe.id]: [pablo], [fuego.id]: [luz, sara], [gNorte.id]: [elena], [gSur.id]: [marco], [gEste.id]: [este1, este2] };
+
+    let creados = 0;
+    for (let i = 0; cuantos + creados < 200; i++) {
+      // Iglesia ponderada (todas con visitantes en todos los estados)
+      const rI = rnd();
+      const ig = rI < 0.5 ? central : rI < 0.7 ? norte : rI < 0.85 ? sur : este;
+      let redId = null;
+      let grupoId = null;
+      let conso = null;
+      if (ig.id === central.id) {
+        if (rnd() < 0.65) {
+          redId = fam.id;
+          grupoId = rnd() < 0.6 ? gracia.id : fe.id;
+        } else {
+          redId = jov.id;
+          grupoId = fuego.id;
+        }
+      } else if (ig.id === norte.id) {
+        redId = redNorte.id;
+        grupoId = gNorte.id;
+      } else if (ig.id === sur.id) {
+        redId = redSur.id;
+        grupoId = gSur.id;
+      } else {
+        redId = redEste.id;
+        grupoId = gEste.id;
+      }
+      if (grupoId && RASOS[grupoId]) {
+        const lista = RASOS[grupoId];
+        conso = lista[ent(lista.length)];
+      }
+      // Longitud de cadena: 1 (30%), 2 (25%), 3 (25%), 4+ (20%)
+      const rC = rnd();
+      const pasos = rC < 0.3 ? 1 : rC < 0.55 ? 2 : rC < 0.8 ? 3 : 4;
+      const finalHace = ent(60); // último cambio: hoy..hace 60 días
+      // Caminar hacia atrás para fechar la creación
+      let haceDias = finalHace;
+      const fechas = [haceDias];
+      for (let p = 1; p < pasos; p++) {
+        haceDias += 1 + ent(7);
+        fechas.unshift(haceDias);
+      }
+      if (fechas[0] > 90) continue; // fuera de ventana, reintentar
+      const nombre = NOMBRES[(i * 7 + 3) % NOMBRES.length];
+      const apellido = APELLIDOS[(i * 11 + 5) % APELLIDOS.length];
+      const creado = await db.visitante.create({
+        data: {
+          nombre,
+          apellido,
+          zona: ZONAS[ent(ZONAS.length)],
+          telefono: `6${String(10000000 + ((i * 7919) % 89999999)).padStart(8, "0")}`,
+          invitadoPor: INVITAN[ent(INVITAN.length)],
+          peticiones: rnd() < 0.3 ? "Petición de oración de prueba" : null,
+          origenId: ORIGENES[ent(ORIGENES.length)],
+          iglesiaId: ig.id,
+          redId,
+          grupoId,
+          consolidadorId: conso ? conso.id : null,
+          estadoActual: CADENA[pasos - 1],
+          createdAt: hace(fechas[0]),
+          updatedAt: hace(fechas[fechas.length - 1]),
+        },
+      });
+      creados++;
+      let previo = null;
+      for (let p = 0; p < pasos; p++) {
+        const creador =
+          ig.id === sur.id || ig.id === este.id ? pastorLuis.id : pastor.id;
+        const quien = p === 0 ? creador : conso ? conso.id : creador;
+        await db.visitanteHistorial.create({
+          data: {
+            visitanteId: creado.id,
+            deEstado: previo,
+            aEstado: CADENA[p],
+            fechaCambio: hace(fechas[p]),
+            fechaContacto: p === 0 ? null : hace(fechas[p]),
+            cambiadoPorId: quien,
+          },
+        });
+        previo = CADENA[p];
+      }
+      // 30% de los consolidados: visita de amistad extra
+      if (pasos === 4 && rnd() < 0.3 && fechas[fechas.length - 1] > 2) {
+        await db.visitanteHistorial.create({
+          data: {
+            visitanteId: creado.id,
+            deEstado: "VISITA_AMISTAD",
+            aEstado: "VISITA_AMISTAD",
+            fechaCambio: hace(Math.max(0, fechas[fechas.length - 1] - (1 + ent(5)))),
+            fechaContacto: hace(Math.max(0, fechas[fechas.length - 1] - (1 + ent(5)))),
+            cambiadoPorId: conso ? conso.id : pastor.id,
+          },
+        });
+      }
+    }
+    console.log(`Generados ${creados} visitantes (total ${cuantos + creados})`);
+  }
 
   console.log("Datos ficticios listos");
 }

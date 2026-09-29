@@ -29,14 +29,75 @@ function sinHash(u: Record<string, unknown>) {
   return resto;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const s = await leerSesion();
   if (!esSuperadmin(s))
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+
+  const url = new URL(req.url);
+  const qIglesia = url.searchParams.get("iglesiaId");
+  const qRed = url.searchParams.get("redId");
+  const qGrupo = url.searchParams.get("grupoId");
+  const qConso = url.searchParams.get("consolidadorId");
+
+  // Filtros validados (lo inválido se ignora sin ampliar nada).
+  let iglesiaId: string | undefined;
+  if (qIglesia) {
+    const ig = await db.iglesia.findFirst({
+      where: { id: qIglesia, activo: true },
+      select: { id: true },
+    });
+    if (ig) iglesiaId = ig.id;
+  }
+  let red: { id: string; iglesiaId: string } | null = null;
+  if (qRed) {
+    red = await db.red.findFirst({
+      where: { id: qRed, activo: true, ...(iglesiaId ? { iglesiaId } : {}) },
+      select: { id: true, iglesiaId: true },
+    });
+  }
+  let grupo: { id: string; iglesiaId: string } | null = null;
+  if (qGrupo) {
+    grupo = await db.grupo.findFirst({
+      where: {
+        id: qGrupo,
+        activo: true,
+        ...(iglesiaId ? { iglesiaId } : {}),
+        ...(red ? { redId: red.id } : {}),
+      },
+      select: { id: true, iglesiaId: true, redId: true },
+    });
+  }
+  // Filtrar por consolidador = mostrar su cadena (pastores/líderes de sus iglesias).
+  let iglesiasConso: string[] | null = null;
+  if (qConso) {
+    const c = await db.usuario.findFirst({
+      where: { id: qConso, activo: true, rol: "CONSOLIDADOR" },
+      select: { iglesias: { select: { iglesiaId: true } } },
+    });
+    if (c) iglesiasConso = c.iglesias.map((x) => x.iglesiaId);
+  }
+
+  // Pastor y líder consolidador son nivel iglesia (visibles dentro de la
+  // iglesia filtrada); el resto debe coincidir con red/grupo.
+  const CADENA: ("PASTOR" | "LIDER_CONSOLIDADOR" | "SUPERADMIN")[] = [
+    "PASTOR",
+    "LIDER_CONSOLIDADOR",
+    "SUPERADMIN",
+  ];
+  const enIglesia = (id: string) => ({ iglesias: { some: { iglesiaId: id } } });
   const usuarios = await db.usuario.findMany({
     where: {
-      rol: { in: ["PASTOR", "LIDER_CONSOLIDADOR", "SUPERADMIN"] },
+      rol: { in: CADENA },
       activo: true,
+      ...(iglesiaId ? enIglesia(iglesiaId) : {}),
+      ...(iglesiasConso ? { iglesias: { some: { iglesiaId: { in: iglesiasConso } } } } : {}),
+      ...(red
+        ? { OR: [{ redId: red.id }, enIglesia(red.iglesiaId)] }
+        : {}),
+      ...(grupo
+        ? { OR: [{ grupoId: grupo.id }, enIglesia(grupo.iglesiaId)] }
+        : {}),
     },
     include: {
       iglesias: {

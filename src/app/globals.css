@@ -56,3 +56,17 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Generar PDF = imprimir: se oculta el cromo interactivo */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #ffffff;
+  }
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}
