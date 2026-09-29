@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* Paleta tomada de las imágenes de referencia (images_test/) */
+@theme {
+  --color-navy: #204b6e;
+  --color-navy-dark: #1a3f5c;
+  --color-gold: #c9a227;
+  --color-gold-bright: #e6b422;
+  --color-wine: #a91e32;
+  --color-cream: #f5f1e8;
+  --color-paper: #fffefb;
+  --color-sand: #e8dcc6;
+  --color-grape: #4b306a;
+  --color-mist: #fbf9ff;
+}
+
+:root {
+  --background: #f5f1e8;
+  --foreground: #1a3f5c;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  background:
+    radial-gradient(
+      640px 320px at 12% -60px,
+      rgba(201, 162, 39, 0.09),
+      transparent 70%
+    ),
+    radial-gradient(
+      760px 380px at 92% -40px,
+      rgba(32, 75, 110, 0.07),
+      transparent 70%
+    ),
+    var(--background);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Recomendación skill ui-ux-pro-max: foco visible siempre */
+:focus-visible {
+  outline: 3px solid #204b6e;
+  outline-offset: 2px;
+}
+
+/* Recomendación skill: respetar movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
