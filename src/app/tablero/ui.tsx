@@ -594,7 +594,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
           {/* Tabs primero, filtros después */}
           <nav aria-label="Secciones" className="no-print flex flex-wrap gap-2">
-            {(sesion?.rol === "CONSOLIDADOR"
+            {(sesion?.rol === "CONSOLIDADOR" || sesion?.rol === "LIDER_GRUPO"
               ? TABS_BASE.filter((t) => t.href !== "/tablero/usuarios")
               : TABS_BASE
             ).map((t) => {

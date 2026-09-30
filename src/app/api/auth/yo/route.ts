@@ -28,6 +28,7 @@ export async function GET() {
     }
   }
   return NextResponse.json({ autenticado: true, ...s, redId, grupoId });
+  return NextResponse.json({ autenticado: true, ...s, redId, grupoId });
 }
 
 export async function POST() {

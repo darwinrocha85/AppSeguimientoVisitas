@@ -249,7 +249,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {sesion?.rol !== "CONSOLIDADOR" && (
+      {sesion?.rol !== "CONSOLIDADOR" && sesion?.rol !== "LIDER_GRUPO" && sesion?.rol !== "LIDER_RED" && (
       <section className="overflow-hidden rounded-2xl border border-sand/60 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand/60 p-4">
           <div className="flex items-center gap-3">

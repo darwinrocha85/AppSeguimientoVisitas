@@ -381,6 +381,16 @@ function Contenido() {
     );
   }
 
+  if (sesion?.rol === "LIDER_GRUPO") {
+    return (
+      <VistaLiderGrupo
+        lista={lista}
+        alertas={resumen?.alertas ?? []}
+        estadoInicial={estadoFiltro}
+      />
+    );
+  }
+
   const listaFiltrada = estadoFiltro
     ? lista.filter((v) => v.estadoActual === estadoFiltro)
     : lista;
@@ -537,6 +547,210 @@ function Contenido() {
                     </span>
                   </div>
                   {esGestorUi && editandoId === v.id && bloqueForm(true, v.id)}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function VistaLiderGrupo({
+  lista,
+  alertas,
+  estadoInicial = null,
+}: {
+  lista: Visitante[];
+  alertas: { iglesiaId: string; estado: string; maxHoras: number }[];
+  estadoInicial?: string | null;
+}) {
+  const [estado, setEstado] = useState<string | null>(estadoInicial);
+  const [filtro, setFiltro] = useState<"todos" | "pendientes" | "alDia">("todos");
+  const [ahora] = useState(() => Date.now());
+
+  function horasDesde(iso: string) {
+    return Math.max(0, Math.floor((ahora - new Date(iso).getTime()) / 3600000));
+  }
+
+  function limiteDe(v: Visitante) {
+    return (
+      alertas.find(
+        (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual
+      )?.maxHoras ?? 100
+    );
+  }
+
+  function estatus(v: Visitante): { texto: string; vencido: boolean } {
+    const hs = horasDesde(v.ultimoCambio);
+    const vencido = hs > limiteDe(v);
+    if (v.estadoActual === "DESEA_SER_CONTACTADO") {
+      return vencido
+        ? { texto: "Pendiente: 1er contacto", vencido }
+        : { texto: "Desea contactar", vencido };
+    }
+    if (v.estadoActual === "PRIMER_CONTACTO") {
+      return vencido
+        ? { texto: "Pendiente: segundo contacto", vencido }
+        : { texto: "Al día: primer contacto", vencido };
+    }
+    if (v.estadoActual === "SEGUNDO_CONTACTO") {
+      return vencido
+        ? { texto: "Pendiente: visita de amistad", vencido }
+        : { texto: "Al día: 2do contacto", vencido };
+    }
+    return vencido
+      ? { texto: "Pendiente: visita de amistad", vencido }
+      : { texto: "Al día: visita de amistad", vencido };
+  }
+
+  const esPendiente = (v: Visitante) => horasDesde(v.ultimoCambio) > limiteDe(v);
+
+  const visible = lista.filter((v) => {
+    if (estado && v.estadoActual !== estado) return false;
+    if (filtro === "pendientes") return esPendiente(v);
+    if (filtro === "alDia") return !esPendiente(v);
+    return true;
+  });
+
+  const COLOR_ORIGEN: Record<string, string> = {
+    Evangelismo: "#a91e32",
+    "Operación Mateo 25": "#204b6e",
+    "1ra visita grupo": "#c9a227",
+    "1ra visita iglesia": "#4b306a",
+  };
+
+  return (
+    <section className="rounded-2xl border border-sand/60 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy text-white">
+            <Icono className="h-5 w-5">{I.visitantes}</Icono>
+          </span>
+          <div className="leading-tight">
+            <h2 className="text-[15px] font-black text-navy">
+              Visitantes de tu grupo • {visible.length}
+            </h2>
+            <p className="text-xs text-zinc-500">
+              Solo lectura · Estado, origen y contacto
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1" role="tablist" aria-label="Filtrar visitantes">
+            {([
+              { id: "todos", texto: "Todos" },
+              { id: "alDia", texto: "Al día" },
+              { id: "pendientes", texto: "Pendientes" },
+            ] as const).map((p) => (
+              <button
+                key={p.id}
+                role="tab"
+                aria-selected={filtro === p.id}
+                onClick={() => setFiltro(p.id)}
+                className={`min-h-[36px] cursor-pointer rounded-full px-4 text-[11px] font-black tracking-[0.06em] uppercase transition-all ${
+                  filtro === p.id
+                    ? "bg-navy text-white"
+                    : "border border-sand bg-white text-zinc-500 hover:bg-paper"
+                }`}
+              >
+                {p.texto}
+              </button>
+            ))}
+          </div>
+          {estado && (
+            <button
+              onClick={() => setEstado(null)}
+              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-navy/30 bg-navy/5 px-3 text-xs font-black text-navy"
+            >
+              Quitar filtro ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        {visible.length === 0 ? (
+          <Vacio
+            titulo="Sin visitantes en este filtro"
+            detalle="Ajusta los filtros para ver visitantes de tu grupo."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {visible.map((v) => {
+              const hs = horasDesde(v.ultimoCambio);
+              const limite = limiteDe(v);
+              const vencido = hs > limite;
+              const est = estatus(v);
+              return (
+                <li
+                  key={v.id}
+                  className="rounded-xl border border-sand/70 bg-paper p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-sand bg-white text-sm font-black text-navy">
+                      {iniciales(v.nombre, v.apellido)}
+                    </span>
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-[14px] font-bold text-navy">
+                          {v.nombre} {v.apellido}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-black tracking-[0.06em] uppercase ${
+                            est.vencido
+                              ? "border-wine/20 bg-wine/10 text-wine"
+                              : "border-navy/20 bg-navy/5 text-navy"
+                          }`}
+                        >
+                          {est.texto}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-zinc-500">
+                        {v.origen && (
+                          <span
+                            className="mr-1 inline-block rounded-full px-2 py-0.5 font-bold text-white"
+                            style={{
+                              backgroundColor: COLOR_ORIGEN[v.origen] ?? "#8b7e66",
+                            }}
+                          >
+                            {v.origen}
+                          </span>
+                        )}
+                        {v.zona}
+                        {!vencido && <span>· {hs}h desde asignación</span>}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="rounded-full border border-sand bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600">
+                        {v.telefono ? formatearTelefono(v.telefono) : "—"}
+                      </span>
+                      <button
+                        disabled
+                        title="Próximamente"
+                        className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase"
+                      >
+                        <Icono className="h-4 w-4">{I.telefono}</Icono>
+                        Llamar
+                      </button>
+                      <button
+                        disabled
+                        title="Próximamente"
+                        className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase"
+                      >
+                        WhatsApp
+                      </button>
+                    </span>
+                  </div>
+                  {vencido && (
+                    <p
+                      role="alert"
+                      className="mt-2 rounded-xl bg-wine px-3 py-2 text-center text-[12px] font-bold text-white"
+                    >
+                      Más de {limite}h sin avance · Prioridad alta
+                    </p>
+                  )}
                 </li>
               );
             })}

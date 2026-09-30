@@ -94,11 +94,12 @@ export async function GET() {
     return lista.map((u) => ({ ...u, detalle }));
   }
 
+  const filtroRed = s.rol === "LIDER_GRUPO" || s.rol === "LIDER_RED" ? { redId: miRed ?? undefined } : {};
   const equipo: Record<string, unknown> = {
-    pastor: await uno(["PASTOR"], {}, "Tu pastor"),
+    pastor: await uno(["PASTOR"], filtroRed, "Tu pastor"),
     liderConsolidador: await uno(
       ["LIDER_CONSOLIDADOR"],
-      {},
+      filtroRed,
       "Líder consolidador"
     ),
   };
