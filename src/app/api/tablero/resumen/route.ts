@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
+  ASIGNADO,
+  SIN_ASIGNAR,
   filtroVisitantes,
   iglesiasDelAlcance,
   validarConsolidador,
   validarRedGrupo,
+  veNoAsignados,
 } from "@/lib/alcance";
 
 /**
@@ -39,15 +42,21 @@ export async function GET(req: Request) {
     rg.grupoId,
     url.searchParams.get("consolidadorId")
   );
+  // Los no asignados (solo iglesia) no cuentan en listas ni estadísticas:
+  // viven únicamente en su tab de pastor/líder consolidador.
   const whereV: Record<string, unknown> = {
     ...baseV,
     activo: true,
+    ...ASIGNADO,
     ...(rg.redId ? { redId: rg.redId } : {}),
     ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
     ...(conId ? { consolidadorId: conId } : {}),
   };
 
-  const [porEstado, porIglesia, porRed, porGrupo, porConso, total] =
+  // Conteo del tab de no asignados (alcance de iglesias, sin filtros de
+  // red/grupo/consolidador). Solo gestores: nunca filtrar afiliaciones a líderes.
+  const puedeVer = veNoAsignados(s);
+  const [porEstado, porIglesia, porRed, porGrupo, porConso, total, noAsignados] =
     await Promise.all([
       db.visitante.groupBy({ by: ["estadoActual"], where: whereV, _count: true }),
       db.visitante.groupBy({ by: ["iglesiaId"], where: whereV, _count: true }),
@@ -59,6 +68,11 @@ export async function GET(req: Request) {
         _count: true,
       }),
       db.visitante.count({ where: whereV }),
+      puedeVer && ids.length > 0
+        ? db.visitante.count({
+            where: { iglesiaId: { in: ids }, activo: true, ...SIN_ASIGNAR },
+          })
+        : Promise.resolve(0),
     ]);
 
   const iglesias =
@@ -139,6 +153,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     alcance: "actual",
     total,
+    noAsignados,
     porEstado: estados,
     porIglesia: porIglesia.map((p) => ({
       iglesiaId: p.iglesiaId,

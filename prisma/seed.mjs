@@ -401,7 +401,7 @@ async function main() {
       origenId: origen["Operación Mateo 25"],
       redId: fam.id,
       grupoId: fe.id,
-      consolidadorId: diego.id,
+      consolidadorId: pablo.id,
       estadoActual: "SEGUNDO_CONTACTO",
       createdAt: hace(15),
       updatedAt: hace(6),
@@ -412,13 +412,13 @@ async function main() {
         a: "PRIMER_CONTACTO",
         cambio: hace(13),
         contacto: hace(13),
-        por: diego.id,
+        por: pablo.id,
       },
       {
         a: "SEGUNDO_CONTACTO",
         cambio: hace(6),
         contacto: hace(6),
-        por: diego.id,
+        por: pablo.id,
         obs: "Aceptó segunda llamada",
       },
     ]
@@ -529,7 +529,9 @@ async function main() {
     const INVITAN = ["Campaña en la plaza", "Un amigo", "Folleto", "Redes sociales", null, null];
     const ORIGENES = Object.values(origen);
     const CADENA = ["DESEA_SER_CONTACTADO", "PRIMER_CONTACTO", "SEGUNDO_CONTACTO", "VISITA_AMISTAD"];
-    const RASOS = { [gracia.id]: [diego, pablo], [fe.id]: [pablo], [fuego.id]: [luz, sara], [gNorte.id]: [elena], [gSur.id]: [marco], [gEste.id]: [este1, este2] };
+    // Cada grupo solo reparte entre SUS consolidadores (la app exige que el
+    // consolidador sea del mismo grupo del visitante).
+    const RASOS = { [gracia.id]: [diego], [fe.id]: [pablo], [fuego.id]: [luz, sara], [gNorte.id]: [elena], [gSur.id]: [marco], [gEste.id]: [este1, este2] };
 
     let creados = 0;
     for (let i = 0; cuantos + creados < 200; i++) {

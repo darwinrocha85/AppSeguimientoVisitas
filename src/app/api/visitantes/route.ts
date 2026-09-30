@@ -3,11 +3,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
+  ASIGNADO,
+  SIN_ASIGNAR,
   esGestor,
   filtroVisitantes,
   iglesiasDelAlcance,
   validarConsolidador,
   validarRedGrupo,
+  veNoAsignados,
 } from "@/lib/alcance";
 import { TELEFONO_AYUDA, TELEFONO_REGEX } from "@/lib/telefono";
 
@@ -26,25 +29,32 @@ export async function GET(req: Request) {
     unknown
   >;
   const ids = await iglesiasDelAlcance(s, iglesiaId);
-  const rg = await validarRedGrupo(
-    s,
-    ids,
-    url.searchParams.get("redId"),
-    url.searchParams.get("grupoId")
-  );
-  const alcance: Record<string, unknown> = {
-    ...base,
-    activo: true,
-    ...(rg.redId ? { redId: rg.redId } : {}),
-    ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
-  };
-  const conId = await validarConsolidador(
-    s,
-    ids,
-    rg.grupoId,
-    url.searchParams.get("consolidadorId")
-  );
-  if (conId) alcance.consolidadorId = conId;
+  // Tab de no asignados (solo iglesia): únicamente pastor, líder
+  // consolidador y superadmin. Ignora filtros de red/grupo/consolidador.
+  const sinAsignar = url.searchParams.get("sinAsignar") === "1";
+  if (sinAsignar && !veNoAsignados(s)) {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  }
+  const alcance: Record<string, unknown> = sinAsignar
+    ? { ...base, activo: true, ...SIN_ASIGNAR }
+    : { ...base, activo: true, ...ASIGNADO };
+  if (!sinAsignar) {
+    const rg = await validarRedGrupo(
+      s,
+      ids,
+      url.searchParams.get("redId"),
+      url.searchParams.get("grupoId")
+    );
+    if (rg.redId) alcance.redId = rg.redId;
+    if (rg.grupoId) alcance.grupoId = rg.grupoId;
+    const conId = await validarConsolidador(
+      s,
+      ids,
+      rg.grupoId,
+      url.searchParams.get("consolidadorId")
+    );
+    if (conId) alcance.consolidadorId = conId;
+  }
 
   const listaBase = await db.visitante.findMany({
     where: alcance,

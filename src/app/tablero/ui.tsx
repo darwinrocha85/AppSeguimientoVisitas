@@ -24,6 +24,8 @@ export type Rol =
 export type Sesion = {
   sub: string;
   usuario: string;
+  nombre?: string;
+  apellido?: string;
   rol: Rol;
   iglesias: string[];
   redId?: string | null;
@@ -49,6 +51,7 @@ export const ETIQUETA_ROL: Record<Rol, string> = {
 export type Resumen = {
   alcance: string;
   total: number;
+  noAsignados: number;
   porEstado: Record<string, number>;
   porIglesia: { iglesiaId: string; nombre: string; total: number }[];
   redes: { id: string; nombre: string; iglesiaId: string; total: number }[];
@@ -294,6 +297,7 @@ export function Vacio({
 
 const TABS_BASE = [
   { href: "/tablero/dashboard", etiqueta: "Dashboard", icono: I.dashboard },
+  { href: "/tablero/equipo", etiqueta: "Equipo", icono: I.usuarioMas },
   { href: "/tablero/visitantes", etiqueta: "Visitantes", icono: I.visitantes },
   { href: "/tablero/usuarios", etiqueta: "Usuarios", icono: I.usuarioMas },
   { href: "/tablero/reportes", etiqueta: "Reportes", icono: I.reporte },
@@ -392,6 +396,8 @@ export function Cascaron({ children }: { children: ReactNode }) {
       setSesion({
         sub: s.sub,
         usuario: s.usuario,
+        nombre: s.nombre ?? "",
+        apellido: s.apellido ?? "",
         rol: s.rol,
         iglesias: s.iglesias ?? [],
         redId: s.redId ?? null,
@@ -448,13 +454,61 @@ export function Cascaron({ children }: { children: ReactNode }) {
     alcanceFijo &&
     !!sesion?.grupoId &&
     (sesion?.rol === "LIDER_GRUPO" || sesion?.rol === "CONSOLIDADOR");
-  const rasosDisponibles = useMemo(
-    () =>
-      (resumen?.consolidadores ?? []).filter(
-        (c) => grupo === "todos" || c.grupoId === grupo
-      ),
-    [resumen, grupo]
-  );
+  // Cascada: si hay grupo elegido, solo sus consolidadores ("Todos" = todo
+  // ese grupo). Si solo hay red elegida, solo los de esa red.
+  const rasosDisponibles = useMemo(() => {
+    const lista = resumen?.consolidadores ?? [];
+    if (grupo !== "todos") return lista.filter((c) => c.grupoId === grupo);
+    if (red !== "todas") {
+      const redDeGrupo = new Map(
+        (resumen?.grupos ?? []).map((g) => [g.id, g.redId])
+      );
+      return lista.filter(
+        (c) => c.grupoId !== null && redDeGrupo.get(c.grupoId) === red
+      );
+    }
+    return lista;
+  }, [resumen, grupo, red]);
+
+  const consolidadorValido = useMemo(() => {
+    if (consolidador === "todos") return "todos";
+    return rasosDisponibles.some((c) => c.id === consolidador)
+      ? consolidador
+      : "todos";
+  }, [rasosDisponibles, consolidador]);
+
+  // Si solo hay una opción en un nivel, se elige sola (no "Todas/Todos").
+  // En cascada: red → grupo → consolidador.
+  /* eslint-disable react-hooks/set-state-in-effect -- autoselección en cascada */
+  useEffect(() => {
+    if (cargando || !resumen || esRaso) return;
+    if (!redFija && red === "todas" && (resumen.redes?.length ?? 0) === 1) {
+      setRed(resumen.redes[0].id);
+      setGrupo("todos");
+      setConsolidador("todos");
+      return;
+    }
+    if (!grupoFijo && grupo === "todos" && gruposDisponibles.length === 1) {
+      setGrupo(gruposDisponibles[0].id);
+      setConsolidador("todos");
+      return;
+    }
+    if (consolidador === "todos" && rasosDisponibles.length === 1) {
+      setConsolidador(rasosDisponibles[0].id);
+    }
+  }, [
+    cargando,
+    resumen,
+    esRaso,
+    redFija,
+    grupoFijo,
+    red,
+    grupo,
+    consolidador,
+    gruposDisponibles,
+    rasosDisponibles,
+  ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function salir() {
     await fetch("/api/auth/yo", { method: "POST" });
@@ -470,7 +524,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
     setRed,
     grupo,
     setGrupo,
-    consolidador,
+    consolidador: consolidadorValido,
     setConsolidador,
     cargando,
     recargarIglesias,
@@ -514,6 +568,20 @@ export function Cascaron({ children }: { children: ReactNode }) {
                   {iglesiaActual ? iglesiaActual.nombre : "Todas las iglesias"}
                 </p>
               </div>
+              {sesion && (sesion.nombre || sesion.apellido) && (
+                <div className="ml-2 hidden border-l border-white/15 pl-4 xl:block">
+                  <p className="max-w-[420px] truncate text-[12px] font-bold text-white">
+                    HOLA{" "}
+                    {`${sesion.nombre ?? ""} ${sesion.apellido ?? ""}`
+                      .trim()
+                      .toUpperCase()}
+                    , DIOS TE BENDIGA
+                  </p>
+                  <p className="mt-1 text-[10px] font-bold tracking-[0.04em] text-gold uppercase">
+                    Gracias por servir al reino
+                  </p>
+                </div>
+              )}
             </div>
             <div className="relative flex items-center gap-2">
               {sesion && (
@@ -594,7 +662,9 @@ export function Cascaron({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
           {/* Tabs primero, filtros después */}
           <nav aria-label="Secciones" className="no-print flex flex-wrap gap-2">
-            {(sesion?.rol === "CONSOLIDADOR" || sesion?.rol === "LIDER_GRUPO"
+            {(sesion?.rol === "CONSOLIDADOR" ||
+            sesion?.rol === "LIDER_GRUPO" ||
+            sesion?.rol === "LIDER_RED"
               ? TABS_BASE.filter((t) => t.href !== "/tablero/usuarios")
               : TABS_BASE
             ).map((t) => {
@@ -718,7 +788,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
               etiqueta="Consolidador"
               colorEtiqueta="text-[#8A6E14]"
               icono={I.usuario}
-              value={consolidador}
+              value={consolidadorValido}
               onChange={setConsolidador}
               aria="Filtrar por consolidador"
               deshabilitado={rasosDisponibles.length === 0}

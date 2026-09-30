@@ -37,32 +37,32 @@ node prisma/seed.mjs
 
 ## Usuarios de demostración (clave común: `Visita123`)
 
-| Usuario | Contraseña | Rol | Iglesias |
-|---|---|---|---|
-| SuperAdmin | Admin1234 | Superadmin | Todas |
-| pastor.juan | Visita123 | Pastor | Central, Norte |
-| pastor.luis | Visita123 | Pastor | Sur, Este |
-| lider.maria | Visita123 | Líder consolidador | Central, Norte |
-| lider.jose | Visita123 | Líder consolidador | Sur, Este |
-| lider.familias | Visita123 | Líder de red | Central (Red Familias) |
-| lider.jovenes | Visita123 | Líder de red | Central (Red Jóvenes) |
-| lider.norte | Visita123 | Líder de red | Norte |
-| lider.sur | Visita123 | Líder de red | Sur |
-| lider.redeste | Visita123 | Líder de red | Este |
-| lider.gracia | Visita123 | Líder de grupo | Central (Gracia - 101) |
-| lider.fe | Visita123 | Líder de grupo | Central (Fe - 102) |
-| lider.fuego | Visita123 | Líder de grupo | Central (Jóvenes Fuego) |
-| lider.norte201 | Visita123 | Líder de grupo | Norte |
-| lider.sur301 | Visita123 | Líder de grupo | Sur |
-| lider.este401 | Visita123 | Líder de grupo | Este |
-| conso.diego | Visita123 | Consolidador | Central (Gracia - 101) |
-| conso.pablo | Visita123 | Consolidador | Central (Fe - 102) |
-| conso.luz | Visita123 | Consolidador | Central (Jóvenes Fuego) |
-| conso.sara | Visita123 | Consolidador | Central (Jóvenes Fuego) |
-| conso.elena | Visita123 | Consolidador | Norte |
-| conso.marco | Visita123 | Consolidador | Sur |
-| conso.este1 | Visita123 | Consolidador | Este |
-| conso.este2 | Visita123 | Consolidador | Este |
+| Usuario | Contraseña | Rol | Iglesia | Red | Grupo |
+|---|---|---|---|---|---|
+| SuperAdmin | Admin1234 | Superadmin | Todas | — | — |
+| pastor.juan | Visita123 | Pastor | Central, Norte | — | — |
+| pastor.luis | Visita123 | Pastor | Sur, Este | — | — |
+| lider.maria | Visita123 | Líder consolidador | Central, Norte | — | — |
+| lider.jose | Visita123 | Líder consolidador | Sur, Este | — | — |
+| lider.familias | Visita123 | Líder de red | Central | Red Familias | — |
+| lider.jovenes | Visita123 | Líder de red | Central | Red Jóvenes | — |
+| lider.norte | Visita123 | Líder de red | Norte | Red Norte | — |
+| lider.sur | Visita123 | Líder de red | Sur | Red Sur | — |
+| lider.redeste | Visita123 | Líder de red | Este | Red Este | — |
+| lider.gracia | Visita123 | Líder de grupo | Central | Red Familias | Grupo Gracia - 101 |
+| lider.fe | Visita123 | Líder de grupo | Central | Red Familias | Grupo Fe - 102 |
+| lider.fuego | Visita123 | Líder de grupo | Central | Red Jóvenes | Grupo Jóvenes Fuego |
+| lider.norte201 | Visita123 | Líder de grupo | Norte | Red Norte | Grupo Norte - 201 |
+| lider.sur301 | Visita123 | Líder de grupo | Sur | Red Sur | Grupo Sur - 301 |
+| lider.este401 | Visita123 | Líder de grupo | Este | Red Este | Grupo Este - 401 |
+| conso.diego | Visita123 | Consolidador | Central | Red Familias | Grupo Gracia - 101 |
+| conso.pablo | Visita123 | Consolidador | Central | Red Familias | Grupo Fe - 102 |
+| conso.luz | Visita123 | Consolidador | Central | Red Jóvenes | Grupo Jóvenes Fuego |
+| conso.sara | Visita123 | Consolidador | Central | Red Jóvenes | Grupo Jóvenes Fuego |
+| conso.elena | Visita123 | Consolidador | Norte | Red Norte | Grupo Norte - 201 |
+| conso.marco | Visita123 | Consolidador | Sur | Red Sur | Grupo Sur - 301 |
+| conso.este1 | Visita123 | Consolidador | Este | Red Este | Grupo Este - 401 |
+| conso.este2 | Visita123 | Consolidador | Este | Red Este | Grupo Este - 401 |
 
 ## 5. Servidor de desarrollo
 

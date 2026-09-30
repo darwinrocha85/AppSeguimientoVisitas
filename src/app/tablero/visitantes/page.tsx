@@ -113,8 +113,13 @@ function Contenido() {
   const estadoFiltro = qp.get("estado");
   const esGestorUi =
     sesion?.rol === "PASTOR" || sesion?.rol === "LIDER_CONSOLIDADOR";
+  const veTabSinAsignar =
+    esGestorUi || sesion?.rol === "SUPERADMIN";
 
   const [busqueda, setBusqueda] = useState("");
+  const [soloSinAsignar, setSoloSinAsignar] = useState(
+    qp.get("sinAsignar") === "1"
+  );
   const [lista, setLista] = useState<Visitante[]>([]);
   const [cargando, setCargando] = useState(true);
   const [origenes, setOrigenes] = useState<Origen[]>([]);
@@ -134,9 +139,13 @@ function Contenido() {
   async function recargar() {
     const qs = new URLSearchParams();
     if (iglesiaId) qs.set("iglesiaId", iglesiaId);
-    if (red !== "todas") qs.set("redId", red);
-    if (grupo !== "todos") qs.set("grupoId", grupo);
-    if (consolidador !== "todos") qs.set("consolidadorId", consolidador);
+    if (soloSinAsignar) {
+      qs.set("sinAsignar", "1");
+    } else {
+      if (red !== "todas") qs.set("redId", red);
+      if (grupo !== "todos") qs.set("grupoId", grupo);
+      if (consolidador !== "todos") qs.set("consolidadorId", consolidador);
+    }
     if (busqueda.trim()) qs.set("q", busqueda.trim());
     const r = await fetch(`/api/visitantes?${qs.toString()}`);
     if (r.ok) setLista(await r.json());
@@ -147,7 +156,17 @@ function Contenido() {
     const t = setTimeout(() => void recargar(), 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [iglesiaId, red, grupo, consolidador, busqueda]);
+  }, [iglesiaId, red, grupo, consolidador, busqueda, soloSinAsignar]);
+
+  function activarSinAsignar(activo: boolean) {
+    setSoloSinAsignar(activo);
+    if (activo) {
+      // El tab ignora la cascada: se vuelve a "todas/todos".
+      setRed("todas");
+      setGrupo("todos");
+      setConsolidador("todos");
+    }
+  }
 
   useEffect(() => {
     async function catalogos() {
@@ -381,12 +400,13 @@ function Contenido() {
     );
   }
 
-  if (sesion?.rol === "LIDER_GRUPO") {
+  if (sesion?.rol === "LIDER_GRUPO" || sesion?.rol === "LIDER_RED") {
     return (
       <VistaLiderGrupo
         lista={lista}
         alertas={resumen?.alertas ?? []}
         estadoInicial={estadoFiltro}
+        esLiderRed={sesion.rol === "LIDER_RED"}
       />
     );
   }
@@ -406,10 +426,13 @@ function Contenido() {
           </span>
           <div className="leading-tight">
             <h2 className="text-[15px] font-black text-navy">
-              Visitantes • {listaFiltrada.length}
+              {soloSinAsignar ? "No asignados" : "Visitantes"} •{" "}
+              {listaFiltrada.length}
             </h2>
             <p className="text-xs text-zinc-500">
-              Iglesia: {iglesia ? iglesia.nombre : "Todas"}
+              {soloSinAsignar
+                ? "Solo iglesia, por asignar a red, grupo y consolidador"
+                : `Iglesia: ${iglesia ? iglesia.nombre : "Todas"}`}
             </p>
           </div>
         </div>
@@ -452,6 +475,31 @@ function Contenido() {
       </div>
 
       {esGestorUi && creando && bloqueForm(false)}
+
+      {veTabSinAsignar && (
+        <div className="mt-3 flex gap-1" role="tablist" aria-label="Asignación">
+          {(
+            [
+              { id: false, texto: "Todos" },
+              { id: true, texto: "No asignados" },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.texto}
+              role="tab"
+              aria-selected={soloSinAsignar === p.id}
+              onClick={() => activarSinAsignar(p.id)}
+              className={`min-h-[36px] cursor-pointer rounded-full px-4 text-[11px] font-black tracking-[0.06em] uppercase transition-all ${
+                soloSinAsignar === p.id
+                  ? "bg-navy text-white"
+                  : "border border-sand bg-white text-zinc-500 hover:bg-paper"
+              }`}
+            >
+              {p.texto}
+            </button>
+          ))}
+        </div>
+      )}
 
       {etiquetaFiltro && (
         <div className="mt-3">
@@ -561,10 +609,12 @@ function VistaLiderGrupo({
   lista,
   alertas,
   estadoInicial = null,
+  esLiderRed = false,
 }: {
   lista: Visitante[];
   alertas: { iglesiaId: string; estado: string; maxHoras: number }[];
   estadoInicial?: string | null;
+  esLiderRed?: boolean;
 }) {
   const [estado, setEstado] = useState<string | null>(estadoInicial);
   const [filtro, setFiltro] = useState<"todos" | "pendientes" | "alDia">("todos");
@@ -630,7 +680,9 @@ function VistaLiderGrupo({
           </span>
           <div className="leading-tight">
             <h2 className="text-[15px] font-black text-navy">
-              Visitantes de tu grupo • {visible.length}
+              {esLiderRed
+                ? `Visitantes de tu red • ${visible.length}`
+                : `Visitantes de tu grupo • ${visible.length}`}
             </h2>
             <p className="text-xs text-zinc-500">
               Solo lectura · Estado, origen y contacto

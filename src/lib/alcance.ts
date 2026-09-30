@@ -7,6 +7,36 @@ export function esGestor(s: Sesion | null) {
 }
 
 /**
+ * Asignado = tiene red, grupo o consolidador (al menos uno).
+ * No asignado = solo iglesia (sin red, sin grupo y sin consolidador).
+ * Los no asignados solo se ven en su tab de pastor/líder consolidador:
+ * fuera de ahí se excluyen de listas, tarjetas y estadísticas.
+ */
+export const ASIGNADO = {
+  OR: [
+    { redId: { not: null } },
+    { grupoId: { not: null } },
+    { consolidadorId: { not: null } },
+  ],
+} as const;
+
+export const SIN_ASIGNAR = {
+  redId: null,
+  grupoId: null,
+  consolidadorId: null,
+} as const;
+
+/** Roles que ven el tab de no asignados (superadmin ve todo). */
+export function veNoAsignados(s: Sesion | null) {
+  return (
+    !!s &&
+    (s.rol === "SUPERADMIN" ||
+      s.rol === "PASTOR" ||
+      s.rol === "LIDER_CONSOLIDADOR")
+  );
+}
+
+/**
  * Alcance organizativo por rol, aplicado en el servidor.
  * - SUPERADMIN: todo (puede filtrar por iglesiaId explícita).
  * - PASTOR / LIDER_CONSOLIDADOR: sus iglesias (máx 2).
@@ -81,7 +111,18 @@ export async function validarRedGrupo(
       where: { id: s.sub },
       select: { redId: true, grupoId: true },
     });
-    if (s.rol === "LIDER_RED" && u?.redId) return { redId: u.redId };
+    if (s.rol === "LIDER_RED" && u?.redId) {
+      // El líder de red ve su red y puede filtrar por un grupo de su red
+      // y en cascada por sus consolidadores. Un grupo fuera de su red se ignora.
+      if (grupoId) {
+        const g = await db.grupo.findFirst({
+          where: { id: grupoId, redId: u.redId, activo: true },
+          select: { id: true },
+        });
+        if (g) return { redId: u.redId, grupoId: g.id };
+      }
+      return { redId: u.redId };
+    }
     if (s.rol === "LIDER_GRUPO" && u?.grupoId) return { grupoId: u.grupoId };
     return {};
   }
@@ -136,5 +177,24 @@ export async function validarConsolidador(
     c.iglesias.some((x) => iglesiaIds.includes(x.iglesiaId));
   if (!enAlcance) return undefined;
   if (grupoIdValidado && c.grupoId !== grupoIdValidado) return undefined;
+  // Alcance propio de líderes: el consolidador debe ser de su red/grupo.
+  // Sin esto, un LIDER_RED filtrando por consolidador podía ver rasos de
+  // otra red de la misma iglesia.
+  if (s.rol === "LIDER_RED" || s.rol === "LIDER_GRUPO") {
+    const yo = await db.usuario.findUnique({
+      where: { id: s.sub },
+      select: { redId: true, grupoId: true },
+    });
+    if (s.rol === "LIDER_GRUPO") {
+      if (!yo?.grupoId || c.grupoId !== yo.grupoId) return undefined;
+    } else if (s.rol === "LIDER_RED" && yo?.redId) {
+      if (!c.grupoId) return undefined;
+      const g = await db.grupo.findUnique({
+        where: { id: c.grupoId },
+        select: { redId: true },
+      });
+      if (!g || g.redId !== yo.redId) return undefined;
+    }
+  }
   return c.id;
 }
