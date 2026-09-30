@@ -117,9 +117,10 @@ function Contenido() {
     esGestorUi || sesion?.rol === "SUPERADMIN";
 
   const [busqueda, setBusqueda] = useState("");
-  const [soloSinAsignar, setSoloSinAsignar] = useState(
-    qp.get("sinAsignar") === "1"
-  );
+  const [tab, setTab] = useState<
+    "todos" | "alDia" | "pendientes" | "sinAsignar"
+  >(qp.get("sinAsignar") === "1" ? "sinAsignar" : "todos");
+  const [ahora] = useState(() => Date.now());
   const [lista, setLista] = useState<Visitante[]>([]);
   const [cargando, setCargando] = useState(true);
   const [origenes, setOrigenes] = useState<Origen[]>([]);
@@ -135,6 +136,8 @@ function Contenido() {
   const [fGrupos, setFGrupos] = useState<Opcion[]>([]);
   const [fRasos, setFRasos] = useState<Raso[]>([]);
   const [fOrigenes, setFOrigenes] = useState<Origen[]>([]);
+
+  const soloSinAsignar = tab === "sinAsignar";
 
   async function recargar() {
     const qs = new URLSearchParams();
@@ -156,11 +159,11 @@ function Contenido() {
     const t = setTimeout(() => void recargar(), 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [iglesiaId, red, grupo, consolidador, busqueda, soloSinAsignar]);
+  }, [iglesiaId, red, grupo, consolidador, busqueda, tab]);
 
-  function activarSinAsignar(activo: boolean) {
-    setSoloSinAsignar(activo);
-    if (activo) {
+  function elegirTab(id: "todos" | "alDia" | "pendientes" | "sinAsignar") {
+    setTab(id);
+    if (id === "sinAsignar") {
       // El tab ignora la cascada: se vuelve a "todas/todos".
       setRed("todas");
       setGrupo("todos");
@@ -221,11 +224,36 @@ function Contenido() {
   }
 
   function abrirCrear() {
-    const ig = iglesiaId || iglesias[0]?.id || "";
-    setForm({ ...VACIO_FORM, iglesiaId: ig });
+    // Precarga con los filtros activos (de lo más específico a lo general)
+    // para no asignar en un lugar distinto al filtrado.
+    let ig = iglesiaId || iglesias[0]?.id || "";
+    let redSel = red !== "todas" ? red : "";
+    let grupoSel = grupo !== "todos" ? grupo : "";
+    const consoSel = consolidador !== "todos" ? consolidador : "";
+    if (consoSel && !grupoSel) {
+      const c = resumen?.consolidadores.find((x) => x.id === consoSel);
+      if (c?.grupoId) grupoSel = c.grupoId;
+    }
+    if (grupoSel) {
+      const g = resumen?.grupos.find((x) => x.id === grupoSel);
+      if (g) {
+        ig = g.iglesiaId;
+        redSel = g.redId;
+      }
+    } else if (redSel) {
+      const r = resumen?.redes.find((x) => x.id === redSel);
+      if (r) ig = r.iglesiaId;
+    }
+    setForm({
+      ...VACIO_FORM,
+      iglesiaId: ig,
+      redId: redSel,
+      grupoId: grupoSel,
+      consolidadorId: consoSel,
+    });
     setError("");
     setCreando(true);
-    void cargarOpciones(ig, "");
+    void cargarOpciones(ig, redSel);
   }
 
   function abrirEdicion(v: Visitante) {
@@ -311,9 +339,16 @@ function Contenido() {
   }
 
   const iglesia = iglesias.find((i) => i.id === iglesiaId);
-  const rasosFiltrados = form.grupoId
-    ? fRasos.filter((r) => r.grupoId === form.grupoId)
-    : fRasos;
+  // Cascada del formulario: con grupo, solo sus rasos; con red (sin grupo),
+  // solo los rasos de esa red; sin nada, todos los de la iglesia.
+  const rasosFiltrados = fRasos.filter((r) => {
+    if (form.grupoId) return r.grupoId === form.grupoId;
+    if (form.redId) {
+      const gruposDeLaRed = new Set(fGrupos.map((g) => g.id));
+      return r.grupoId !== null && gruposDeLaRed.has(r.grupoId);
+    }
+    return true;
+  });
 
   function bloqueForm(esEdicion: boolean, id?: string) {
     return (
@@ -411,12 +446,32 @@ function Contenido() {
     );
   }
 
-  const listaFiltrada = estadoFiltro
-    ? lista.filter((v) => v.estadoActual === estadoFiltro)
-    : lista;
+  function horasDesde(iso: string) {
+    return Math.max(0, Math.floor((ahora - new Date(iso).getTime()) / 3600000));
+  }
+
+  function limiteDe(v: Visitante) {
+    return (
+      resumen?.alertas.find(
+        (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual
+      )?.maxHoras ?? 100
+    );
+  }
+
+  const esPendiente = (v: Visitante) =>
+    horasDesde(v.ultimoCambio) > limiteDe(v);
+
+  const listaFiltrada = lista.filter((v) => {
+    if (estadoFiltro && v.estadoActual !== estadoFiltro) return false;
+    if (tab === "pendientes") return esPendiente(v);
+    if (tab === "alDia") return !esPendiente(v);
+    return true;
+  });
   const etiquetaFiltro = estadoFiltro
     ? (INSIGNIA_ESTADO[estadoFiltro]?.texto ?? estadoFiltro)
     : null;
+  const alDia = lista.filter((v) => !esPendiente(v)).length;
+  const pendientes = lista.length - alDia;
 
   return (
     <section className="rounded-2xl border border-sand/60 bg-white p-4">      <div className="flex flex-wrap items-center justify-between gap-3">
@@ -476,21 +531,25 @@ function Contenido() {
 
       {esGestorUi && creando && bloqueForm(false)}
 
-      {veTabSinAsignar && (
-        <div className="mt-3 flex gap-1" role="tablist" aria-label="Asignación">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filtrar visitantes">
           {(
             [
-              { id: false, texto: "Todos" },
-              { id: true, texto: "No asignados" },
+              { id: "todos", texto: "Todos" },
+              { id: "alDia", texto: "Al día" },
+              { id: "pendientes", texto: "Pendientes" },
+              ...(veTabSinAsignar
+                ? [{ id: "sinAsignar", texto: "No asignados" } as const]
+                : []),
             ] as const
           ).map((p) => (
             <button
-              key={p.texto}
+              key={p.id}
               role="tab"
-              aria-selected={soloSinAsignar === p.id}
-              onClick={() => activarSinAsignar(p.id)}
+              aria-selected={tab === p.id}
+              onClick={() => elegirTab(p.id)}
               className={`min-h-[36px] cursor-pointer rounded-full px-4 text-[11px] font-black tracking-[0.06em] uppercase transition-all ${
-                soloSinAsignar === p.id
+                tab === p.id
                   ? "bg-navy text-white"
                   : "border border-sand bg-white text-zinc-500 hover:bg-paper"
               }`}
@@ -499,7 +558,10 @@ function Contenido() {
             </button>
           ))}
         </div>
-      )}
+        <p className="text-xs text-zinc-500">
+          {alDia} al día · {pendientes} pendientes
+        </p>
+      </div>
 
       {etiquetaFiltro && (
         <div className="mt-3">

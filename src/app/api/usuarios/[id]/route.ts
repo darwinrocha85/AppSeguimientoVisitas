@@ -48,7 +48,8 @@ export async function PUT(
     actual.rol === "LIDER_CONSOLIDADOR" ||
     actual.rol === "SUPERADMIN";
   const gestor = esGestor(s);
-  // Superadmin edita altas; gestores editan roles bajos de SUS iglesias.
+  // Superadmin edita altas; pastor edita líder consolidador y bajos de SUS
+  // iglesias (nunca a otro pastor); líder consolidador solo bajos.
   if (esSuperadmin(s)) {
     if (!esAlta)
       return NextResponse.json(
@@ -56,7 +57,10 @@ export async function PUT(
         { status: 403 }
       );
   } else if (gestor) {
-    if (esAlta) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+    if (actual.rol === "SUPERADMIN" || actual.rol === "PASTOR")
+      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+    if (s.rol === "LIDER_CONSOLIDADOR" && actual.rol === "LIDER_CONSOLIDADOR")
+      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
     const mias = new Set(s.iglesias);
     if (!actual.iglesias.some((x) => mias.has(x.iglesiaId)))
       return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
@@ -82,14 +86,30 @@ export async function PUT(
   }
 
   // Gestores: una sola iglesia propia; red/grupo validados contra ella.
+  // Pastor editando líder consolidador: de una a dos iglesias propias.
+  // Pastor y líder consolidador son nivel iglesia: sin red ni grupo.
+  if (gestor && !esSuperadmin(s)) {
+    if (actual.rol === "PASTOR" || actual.rol === "LIDER_CONSOLIDADOR") {
+      datos.data.redId = null;
+      datos.data.grupoId = null;
+    }
+  }
   let iglesiaIds = datos.data.iglesiaIds;
   if (gestor && !esSuperadmin(s)) {
     const base = iglesiaIds ?? actual.iglesias.map((x) => x.iglesiaId);
-    if (base.length !== 1 || !s.iglesias.includes(base[0]))
+    if (s.rol === "PASTOR" && actual.rol === "LIDER_CONSOLIDADOR") {
+      const propias = base.every((id) => s.iglesias.includes(id));
+      if (base.length < 1 || base.length > 2 || !propias)
+        return NextResponse.json(
+          { error: "De una a dos iglesias de tu alcance" },
+          { status: 400 }
+        );
+    } else if (base.length !== 1 || !s.iglesias.includes(base[0])) {
       return NextResponse.json(
         { error: "Una sola iglesia de tu alcance" },
         { status: 400 }
       );
+    }
     iglesiaIds = base;
   }
   const iglesiaFinal = iglesiaIds ? iglesiaIds[0] : actual.iglesias[0]?.iglesiaId;
@@ -175,18 +195,27 @@ export async function DELETE(
 
   // Quién puede desactivar a quién (borrado LÓGICO, se conserva el registro):
   // - Superadmin: ciclo de vida completo (pastor, líder consolidador y roles bajos).
-  // - Pastor y líder consolidador: solo roles bajos de sus propias iglesias.
-  //   El líder consolidador nunca toca al pastor.
-  const esAlta =
-    actual.rol === "PASTOR" || actual.rol === "LIDER_CONSOLIDADOR";
+  // - Pastor: líder consolidador y roles bajos de sus propias iglesias (nunca a otro pastor).
+  // - Líder consolidador: solo roles bajos. Nunca toca al pastor ni a otro líder.
+  const ROLES_BAJOS = ["LIDER_RED", "LIDER_GRUPO", "CONSOLIDADOR"];
   let permitido = esSuperadmin(s);
-  if (
-    !permitido &&
-    (s.rol === "PASTOR" || s.rol === "LIDER_CONSOLIDADOR") &&
-    !esAlta
-  ) {
+  if (!permitido) {
     const mias = new Set(s.iglesias);
-    permitido = actual.iglesias.some((x) => mias.has(x.iglesiaId));
+    const comparte = actual.iglesias.some((x) => mias.has(x.iglesiaId));
+    if (
+      s.rol === "PASTOR" &&
+      (actual.rol === "LIDER_CONSOLIDADOR" ||
+        (ROLES_BAJOS as string[]).includes(actual.rol)) &&
+      comparte
+    ) {
+      permitido = true;
+    } else if (
+      s.rol === "LIDER_CONSOLIDADOR" &&
+      (ROLES_BAJOS as string[]).includes(actual.rol) &&
+      comparte
+    ) {
+      permitido = true;
+    }
   }
   if (!permitido)
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });

@@ -54,6 +54,11 @@ export default function Usuarios() {
   const esSuper = sesion?.rol === "SUPERADMIN";
   const esGestorUi =
     sesion?.rol === "PASTOR" || sesion?.rol === "LIDER_CONSOLIDADOR";
+  const esPastorUi = sesion?.rol === "PASTOR";
+  // El pastor también crea líderes consolidadores; el líder consolidador no.
+  const ROLES_CREAR: { value: Rol; texto: string }[] = esPastorUi
+    ? [...ROLES_BAJOS, { value: "LIDER_CONSOLIDADOR", texto: "Líder consolidador" }]
+    : ROLES_BAJOS;
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [restringido, setRestringido] = useState(false);
@@ -79,6 +84,7 @@ export default function Usuarios() {
   const [fTelefono, setFTelefono] = useState("");
   const [fRol, setFRol] = useState<Rol>("CONSOLIDADOR");
   const [fIglesia, setFIglesia] = useState("");
+  const [fIglesias, setFIglesias] = useState<string[]>([]);
   const [fRed, setFRed] = useState("");
   const [fGrupo, setFGrupo] = useState("");
 
@@ -153,6 +159,16 @@ export default function Usuarios() {
     };
     if (esSuper) {
       cuerpo.iglesiaIds = asignadas;
+    } else if (
+      usuarios.find((x) => x.id === editandoId)?.rol === "LIDER_CONSOLIDADOR"
+    ) {
+      // Pastor editando líder: de una a dos iglesias propias, sin red/grupo.
+      if (asignadas.length === 0) {
+        setError("Debe estar al menos en una iglesia (máximo dos)");
+        setGuardando(false);
+        return;
+      }
+      cuerpo.iglesiaIds = asignadas;
     } else {
       const ig = u_iglesiaActual();
       if (!ig) {
@@ -190,6 +206,8 @@ export default function Usuarios() {
     if (u.rol === "SUPERADMIN") return false;
     if (esSuper) return true;
     if (!esGestorUi) return false;
+    // Pastor: todo menos otro pastor. Líder consolidador: solo roles bajos.
+    if (esPastorUi) return u.rol !== "PASTOR";
     return !["PASTOR", "LIDER_CONSOLIDADOR"].includes(u.rol);
   }
 
@@ -212,6 +230,11 @@ export default function Usuarios() {
 
   async function crear(e: React.FormEvent) {
     e.preventDefault();
+    const esLiderNuevo = fRol === "LIDER_CONSOLIDADOR";
+    if (esLiderNuevo && fIglesias.length === 0) {
+      setError("Elige al menos una iglesia (máximo dos)");
+      return;
+    }
     setError("");
     setGuardando(true);
     const r = await fetch("/api/usuarios", {
@@ -224,9 +247,10 @@ export default function Usuarios() {
         apellido: fApellido,
         telefono: fTelefono || undefined,
         rol: fRol,
-        iglesiaIds: [fIglesia],
-        redId: fRed || undefined,
-        grupoId: fGrupo || undefined,
+        iglesiaIds: esLiderNuevo ? fIglesias : [fIglesia],
+        ...(esLiderNuevo
+          ? {}
+          : { redId: fRed || undefined, grupoId: fGrupo || undefined }),
       }),
     });
     setGuardando(false);
@@ -311,32 +335,44 @@ export default function Usuarios() {
         >
           <input aria-label="Usuario login" className={campo} placeholder="Usuario login" value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} required minLength={3} />
           <input aria-label="Contraseña" className={campo} placeholder="Contraseña (min 6)" type="password" value={fContrasena} onChange={(e) => setFContrasena(e.target.value)} required minLength={6} autoComplete="new-password" />
-          <select aria-label="Rol" className={`${campo} cursor-pointer`} value={fRol} onChange={(e) => setFRol(e.target.value as Rol)}>
-            {ROLES_BAJOS.map((r) => (
+          <select aria-label="Rol" className={`${campo} cursor-pointer`} value={fRol} onChange={(e) => { const r = e.target.value as Rol; setFRol(r); setFRed(""); setFGrupo(""); if (r === "LIDER_CONSOLIDADOR" && fIglesias.length === 0 && iglesias.length > 0) setFIglesias([iglesias[0].id]); }}>
+            {ROLES_CREAR.map((r) => (
               <option key={r.value} value={r.value}>{r.texto}</option>
             ))}
           </select>
           <input aria-label="Nombre" className={campo} placeholder="Nombre" value={fNombre} onChange={(e) => setFNombre(e.target.value)} required />
           <input aria-label="Apellido" className={campo} placeholder="Apellido" value={fApellido} onChange={(e) => setFApellido(e.target.value)} required />
           <input aria-label="Teléfono" className={campo} placeholder="Teléfono (607 35 00 44)" inputMode="numeric" value={formatearTelefono(fTelefono)} onChange={(e) => setFTelefono(soloDigitos(e.target.value))} />
-          <select aria-label="Iglesia" className={`${campo} cursor-pointer`} value={fIglesia} onChange={(e) => { setFIglesia(e.target.value); setFRed(""); setFGrupo(""); }} required>
-            <option value="">Iglesia…</option>
-            {iglesias.map((ig) => (
-              <option key={ig.id} value={ig.id}>{ig.nombre}</option>
-            ))}
-          </select>
-          <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
-            <option value="">Red (opcional)…</option>
-            {redesDe(fIglesia).map((r) => (
-              <option key={r.id} value={r.id}>{r.nombre}</option>
-            ))}
-          </select>
-          <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} onChange={(e) => setFGrupo(e.target.value)}>
-            <option value="">Grupo (opcional)…</option>
-            {gruposDe(fRed).map((g) => (
-              <option key={g.id} value={g.id}>{g.nombre}</option>
-            ))}
-          </select>
+          {fRol === "LIDER_CONSOLIDADOR" ? (
+            <div className="md:col-span-2">
+              <SelectorIglesias
+                iglesias={iglesias}
+                seleccionadas={fIglesias}
+                onChange={setFIglesias}
+              />
+            </div>
+          ) : (
+            <>
+              <select aria-label="Iglesia" className={`${campo} cursor-pointer`} value={fIglesia} onChange={(e) => { setFIglesia(e.target.value); setFRed(""); setFGrupo(""); }} required>
+                <option value="">Iglesia…</option>
+                {iglesias.map((ig) => (
+                  <option key={ig.id} value={ig.id}>{ig.nombre}</option>
+                ))}
+              </select>
+              <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
+                <option value="">Red (opcional)…</option>
+                {redesDe(fIglesia).map((r) => (
+                  <option key={r.id} value={r.id}>{r.nombre}</option>
+                ))}
+              </select>
+              <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} onChange={(e) => setFGrupo(e.target.value)}>
+                <option value="">Grupo (opcional)…</option>
+                {gruposDe(fRed).map((g) => (
+                  <option key={g.id} value={g.id}>{g.nombre}</option>
+                ))}
+              </select>
+            </>
+          )}
           <div className="md:col-span-3">
             <button
               disabled={guardando}
@@ -481,6 +517,14 @@ export default function Usuarios() {
                     onChange={(e) => setTelefono(soloDigitos(e.target.value))}
                   />
                   {esSuper ? (
+                    <div className="md:col-span-2">
+                      <SelectorIglesias
+                        iglesias={iglesias}
+                        seleccionadas={asignadas}
+                        onChange={setAsignadas}
+                      />
+                    </div>
+                  ) : u.rol === "LIDER_CONSOLIDADOR" ? (
                     <div className="md:col-span-2">
                       <SelectorIglesias
                         iglesias={iglesias}

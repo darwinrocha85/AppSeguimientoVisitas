@@ -37,8 +37,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Rango inválido" }, { status: 400 });
   }
 
+  // La iglesia elegida aplica para superadmin y gestores (pastor/líder);
+  // el alcance la intersecta con las propias (máx 2).
   const iglesiaId =
-    s.rol === "SUPERADMIN" ? url.searchParams.get("iglesiaId") : null;
+    s.rol === "SUPERADMIN" ||
+    s.rol === "PASTOR" ||
+    s.rol === "LIDER_CONSOLIDADOR"
+      ? url.searchParams.get("iglesiaId")
+      : null;
   const ids = await iglesiasDelAlcance(s, iglesiaId);
   const rg = await validarRedGrupo(
     s,
@@ -46,10 +52,10 @@ export async function GET(req: Request) {
     url.searchParams.get("redId"),
     url.searchParams.get("grupoId")
   );
-  const base = (await filtroVisitantes(
-    s,
-    s.rol === "SUPERADMIN" ? iglesiaId : null
-  )) as Record<string, unknown>;
+  const base = (await filtroVisitantes(s, iglesiaId)) as Record<
+    string,
+    unknown
+  >;
   const conId = await validarConsolidador(
     s,
     ids,

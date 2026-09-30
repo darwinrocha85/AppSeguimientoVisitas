@@ -21,8 +21,14 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
+  // La iglesia elegida aplica para superadmin y gestores (pastor/líder);
+  // el alcance la intersecta con las propias (máx 2).
   const iglesiaId =
-    s.rol === "SUPERADMIN" ? url.searchParams.get("iglesiaId") : null;
+    s.rol === "SUPERADMIN" ||
+    s.rol === "PASTOR" ||
+    s.rol === "LIDER_CONSOLIDADOR"
+      ? url.searchParams.get("iglesiaId")
+      : null;
 
   const base = (await filtroVisitantes(s, iglesiaId)) as Record<
     string,

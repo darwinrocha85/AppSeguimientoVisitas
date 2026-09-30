@@ -21,8 +21,14 @@ export async function GET(req: Request) {
   if (!s) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   const url = new URL(req.url);
+  // La iglesia elegida aplica para superadmin y gestores (pastor/líder);
+  // iglesiasDelAlcance la intersecta con las propias (máx 2).
   const iglesiaId =
-    s.rol === "SUPERADMIN" ? url.searchParams.get("iglesiaId") : null;
+    s.rol === "SUPERADMIN" ||
+    s.rol === "PASTOR" ||
+    s.rol === "LIDER_CONSOLIDADOR"
+      ? url.searchParams.get("iglesiaId")
+      : null;
 
   const ids = await iglesiasDelAlcance(s, iglesiaId);
   // Cascada: la red debe ser de una iglesia del alcance y el grupo de esa red.
@@ -32,10 +38,10 @@ export async function GET(req: Request) {
     url.searchParams.get("redId"),
     url.searchParams.get("grupoId")
   );
-  const baseV = (await filtroVisitantes(
-    s,
-    s.rol === "SUPERADMIN" ? iglesiaId : null
-  )) as Record<string, unknown>;
+  const baseV = (await filtroVisitantes(s, iglesiaId)) as Record<
+    string,
+    unknown
+  >;
   const conId = await validarConsolidador(
     s,
     ids,

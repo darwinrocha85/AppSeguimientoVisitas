@@ -197,21 +197,43 @@ export async function POST(req: Request) {
         { status: 403 }
       );
   } else if (esGestor(s)) {
-    // Pastor/líder consolidador: solo roles bajos de SUS iglesias (una sola).
-    if (!esBajo)
-      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
-    if (d.iglesiaIds.length !== 1 || !s.iglesias.includes(d.iglesiaIds[0]))
-      return NextResponse.json(
-        { error: "Una sola iglesia de tu alcance" },
-        { status: 400 }
-      );
+    // Pastor: roles bajos (una sola iglesia propia) y líder consolidador
+    // (máx 2 iglesias propias). Líder consolidador: solo roles bajos.
+    if (s.rol === "PASTOR") {
+      if (d.rol === "LIDER_CONSOLIDADOR") {
+        const propias = d.iglesiaIds.every((id) => s.iglesias.includes(id));
+        if (d.iglesiaIds.length < 1 || d.iglesiaIds.length > 2 || !propias)
+          return NextResponse.json(
+            { error: "De una a dos iglesias de tu alcance" },
+            { status: 400 }
+          );
+      } else {
+        if (!esBajo)
+          return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+        if (d.iglesiaIds.length !== 1 || !s.iglesias.includes(d.iglesiaIds[0]))
+          return NextResponse.json(
+            { error: "Una sola iglesia de tu alcance" },
+            { status: 400 }
+          );
+      }
+    } else {
+      if (!esBajo)
+        return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+      if (d.iglesiaIds.length !== 1 || !s.iglesias.includes(d.iglesiaIds[0]))
+        return NextResponse.json(
+          { error: "Una sola iglesia de tu alcance" },
+          { status: 400 }
+        );
+    }
   } else {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
 
   // Validar red/grupo para roles bajos (deben pertenecer a la iglesia).
+  // El líder consolidador es nivel iglesia: sin red ni grupo.
+  const esLiderConsol = d.rol === "LIDER_CONSOLIDADOR";
   const iglesiaId = d.iglesiaIds[0];
-  if (d.redId) {
+  if (!esLiderConsol && d.redId) {
     const r = await db.red.findFirst({
       where: { id: d.redId, iglesiaId, activo: true },
       select: { id: true },
@@ -219,7 +241,7 @@ export async function POST(req: Request) {
     if (!r)
       return NextResponse.json({ error: "Red inválida" }, { status: 400 });
   }
-  if (d.grupoId) {
+  if (!esLiderConsol && d.grupoId) {
     const g = await db.grupo.findFirst({
       where: {
         id: d.grupoId,
@@ -251,8 +273,8 @@ export async function POST(req: Request) {
       apellido: d.apellido,
       telefono: d.telefono,
       rol: d.rol,
-      redId: d.redId ?? null,
-      grupoId: d.grupoId ?? null,
+      redId: esLiderConsol ? null : (d.redId ?? null),
+      grupoId: esLiderConsol ? null : (d.grupoId ?? null),
       iglesias: {
         create: d.iglesiaIds.map((id) => ({ iglesiaId: id })),
       },
