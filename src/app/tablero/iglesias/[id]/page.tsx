@@ -89,11 +89,13 @@ export default function DetalleIglesia() {
   const puedeConfigurar =
     !!sesion &&
     (sesion.rol === "SUPERADMIN" ||
-      (sesion.rol === "PASTOR" && sesion.iglesias.includes(params.id)));
+      (sesion.rol === "PASTOR" && sesion.iglesias.includes(params.id)) ||
+      (sesion.rol === "LIDER_CONSOLIDADOR" &&
+        sesion.iglesias.includes(params.id)));
 
   const ESTADOS_ALERTA = [
     { clave: "DESEA_SER_CONTACTADO", texto: "De desea contactar a 1er contacto" },
-    { clave: "PRIMER_CONTACTO", texto: "De 1er contacto a 2do contacto" },
+    { clave: "PRIMER_CONTACTO", texto: "De 1er contacto a 2do contacto (incluye bandeja No asignado)" },
     { clave: "SEGUNDO_CONTACTO", texto: "De 2do contacto a visita de amistad" },
     { clave: "VISITA_AMISTAD", texto: "En visita de amistad" },
   ];
@@ -567,10 +569,13 @@ export default function DetalleIglesia() {
             </span>
             <div className="leading-tight">
               <h2 className="text-[15px] font-black text-navy">
-                Tiempos de alerta
+                Tiempos de alerta (CRUD por iglesia)
               </h2>
               <p className="text-xs text-zinc-500">
-                Horas permitidas por transición antes de avisar al consolidador.
+                Horas permitidas por transición antes de avisar. Orden: Desea
+                &gt; 1er &gt; No asignado 2do &gt; 2do &gt; Visita. El tramo No
+                asignado es derivado (1er contacto sin consolidador) y usa el
+                tiempo de 1er contacto.
               </p>
             </div>
           </div>

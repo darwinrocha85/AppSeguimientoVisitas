@@ -1,4 +1,5 @@
 import { db } from "./db";
+import type { Prisma } from "@prisma/client";
 import type { Sesion } from "./auth";
 
 /** Pastores y líderes consolidadores gestionan la estructura de SUS iglesias. */
@@ -25,6 +26,29 @@ export const SIN_ASIGNAR = {
   grupoId: null,
   consolidadorId: null,
 } as const;
+
+/**
+ * No asignado para 2do contacto (DERIVADO, no es enum):
+ * ya recibió el 1er contacto pero no tiene consolidador asignado para el
+ * 2do. Orden: Desea > 1er > No asignado 2do > 2do > Visita.
+ * Usa el límite de PRIMER_CONTACTO; en estadísticas sigue contando como
+ * PRIMER_CONTACTO (no altera fecha_cambio_estado ni % éxito).
+ *
+ * Bandeja única "No asignados": unión de SIN_ASIGNAR (solo iglesia) y
+ * SIN_CONSOLIDADOR_SEGUNDO (1er contacto sin consolidador).
+ */
+export const SIN_CONSOLIDADOR_SEGUNDO = {
+  estadoActual: "PRIMER_CONTACTO",
+  consolidadorId: null,
+} as const;
+
+/** Unión para la bandeja y tarjeta únicas de "No asignados". */
+export const NECESITA_ASIGNACION: Prisma.VisitanteWhereInput = {
+  OR: [
+    { redId: null, grupoId: null, consolidadorId: null },
+    { estadoActual: "PRIMER_CONTACTO", consolidadorId: null },
+  ],
+};
 
 /** Roles que ven el tab de no asignados (superadmin ve todo). */
 export function veNoAsignados(s: Sesion | null) {

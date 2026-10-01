@@ -154,7 +154,7 @@ export default function Dashboard() {
       {veNoAsignadosUi && (
         <Link
           href="/tablero/visitantes?sinAsignar=1"
-          title="Ver visitantes sin asignar"
+          title="Ver visitantes por asignar"
           className="flex items-center gap-3 rounded-2xl border border-gold/40 bg-gold/10 p-4 transition-all duration-200 hover:border-gold/60 hover:shadow-md"
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gold/20 text-[#8A6E14]">
@@ -165,7 +165,7 @@ export default function Dashboard() {
               No asignados
             </span>
             <span className="mt-0.5 block text-[13px] font-medium text-zinc-600">
-              Solo iglesia, por asignar a red, grupo y consolidador
+              Solo iglesia por asignar o 1er contacto sin consolidador para el 2do
             </span>
           </span>
           <span className="text-[32px] leading-none font-black text-navy">

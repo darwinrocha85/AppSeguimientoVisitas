@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
   ASIGNADO,
-  SIN_ASIGNAR,
+  NECESITA_ASIGNACION,
   esGestor,
   filtroVisitantes,
   iglesiasDelAlcance,
@@ -35,14 +35,16 @@ export async function GET(req: Request) {
     unknown
   >;
   const ids = await iglesiasDelAlcance(s, iglesiaId);
-  // Tab de no asignados (solo iglesia): únicamente pastor, líder
-  // consolidador y superadmin. Ignora filtros de red/grupo/consolidador.
+  // Bandeja única "No asignados" (pastor, líder consolidador y
+  // superadmin; ignora filtros de red/grupo/consolidador): solo iglesia
+  // (sin red, grupo ni consolidador) MÁS 1er contacto sin consolidador
+  // para el 2do (derivado, sigue contando como PRIMER_CONTACTO).
   const sinAsignar = url.searchParams.get("sinAsignar") === "1";
   if (sinAsignar && !veNoAsignados(s)) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
   const alcance: Record<string, unknown> = sinAsignar
-    ? { ...base, activo: true, ...SIN_ASIGNAR }
+    ? { ...base, activo: true, ...NECESITA_ASIGNACION }
     : { ...base, activo: true, ...ASIGNADO };
   if (!sinAsignar) {
     const rg = await validarRedGrupo(

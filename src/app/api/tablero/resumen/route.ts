@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
   ASIGNADO,
-  SIN_ASIGNAR,
+  NECESITA_ASIGNACION,
   filtroVisitantes,
   iglesiasDelAlcance,
   validarConsolidador,
@@ -76,7 +76,11 @@ export async function GET(req: Request) {
       db.visitante.count({ where: whereV }),
       puedeVer && ids.length > 0
         ? db.visitante.count({
-            where: { iglesiaId: { in: ids }, activo: true, ...SIN_ASIGNAR },
+            where: {
+              iglesiaId: { in: ids },
+              activo: true,
+              ...NECESITA_ASIGNACION,
+            },
           })
         : Promise.resolve(0),
     ]);

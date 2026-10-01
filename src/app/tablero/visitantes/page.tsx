@@ -486,7 +486,7 @@ function Contenido() {
             </h2>
             <p className="text-xs text-zinc-500">
               {soloSinAsignar
-                ? "Solo iglesia, por asignar a red, grupo y consolidador"
+                ? "Solo iglesia por asignar o 1er contacto sin consolidador · Reasigna con Editar"
                 : `Iglesia: ${iglesia ? iglesia.nombre : "Todas"}`}
             </p>
           </div>
@@ -609,6 +609,12 @@ function Contenido() {
                         >
                           {ins.texto}
                         </span>
+                        {v.estadoActual === "PRIMER_CONTACTO" &&
+                          !v.consolidadorId && (
+                            <span className="rounded-full border border-wine/20 bg-wine/10 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-wine uppercase">
+                              No asignado 2do
+                            </span>
+                          )}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-zinc-500">
                         {v.telefono && `${formatearTelefono(v.telefono)} • `}
