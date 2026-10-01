@@ -1,0 +1,162 @@
+// Esquema de PRODUCCIÓN (Vercel + PostgreSQL administrado: Neon/Supabase).
+// Debe mantenerse idéntico a schema.prisma (SQLite local) salvo el provider.
+// Regla: cambia primero schema.prisma, verifica en local y luego replica
+// aquí solo el bloque datasource. No guardar la DB de producción en el
+// sistema de archivos efímero de Vercel.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  SUPERADMIN
+  PASTOR
+  LIDER_CONSOLIDADOR
+  LIDER_RED
+  LIDER_GRUPO
+  CONSOLIDADOR
+}
+
+enum EstadoVisitante {
+  DESEA_SER_CONTACTADO
+  PRIMER_CONTACTO
+  SEGUNDO_CONTACTO
+  VISITA_AMISTAD
+}
+
+model Iglesia {
+  id        String   @id @default(cuid())
+  nombre    String
+  activo    Boolean  @default(true)
+  direccion String?
+  telefono  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redes      Red[]
+  grupos     Grupo[]
+  usuarios   UsuarioIglesia[]
+  visitantes Visitante[]
+  alertas    AlertaConfig[]
+  origenes   Origen[]
+}
+
+model Red {
+  id        String   @id @default(cuid())
+  nombre    String
+  activo    Boolean  @default(true)
+  iglesiaId String
+  iglesia   Iglesia  @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+  liderId   String?
+  lider     Usuario? @relation("LiderRed", fields: [liderId], references: [id], onDelete: SetNull)
+
+  grupos Grupo[]
+}
+
+model Grupo {
+  id        String   @id @default(cuid())
+  nombre    String
+  activo    Boolean  @default(true)
+  iglesiaId String
+  iglesia   Iglesia  @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+  redId     String
+  red       Red      @relation(fields: [redId], references: [id], onDelete: Cascade)
+  liderId   String?
+  lider     Usuario? @relation("LiderGrupo", fields: [liderId], references: [id], onDelete: SetNull)
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  usuario      String   @unique
+  passwordHash String
+  nombre       String
+  apellido     String
+  telefono     String?
+  rol          Rol
+  activo       Boolean  @default(true)
+  redId        String?
+  grupoId      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  iglesias         UsuarioIglesia[]
+  redesLideradas   Red[]            @relation("LiderRed")
+  gruposLiderados  Grupo[]          @relation("LiderGrupo")
+  visitantes       Visitante[]      @relation("ConsolidadorAsignado")
+  cambios          VisitanteHistorial[] @relation("CambiadoPor")
+}
+
+model UsuarioIglesia {
+  usuarioId String
+  iglesiaId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  iglesia   Iglesia @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, iglesiaId])
+}
+
+model Origen {
+  id        String   @id @default(cuid())
+  nombre    String
+  iglesiaId String?
+  iglesia   Iglesia? @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+  activo    Boolean  @default(true)
+
+  visitantes Visitante[]
+}
+
+model AlertaConfig {
+  id        String           @id @default(cuid())
+  iglesiaId String
+  iglesia   Iglesia          @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+  estado    EstadoVisitante
+  maxHoras  Int              @default(100)
+
+  @@unique([iglesiaId, estado])
+}
+
+model Visitante {
+  id              String           @id @default(cuid())
+  nombre          String
+  apellido        String
+  zona            String
+  telefono        String?
+  edad            Int?
+  codigoPostal    String?
+  calle           String?
+  invitadoPor     String?
+  peticiones      String?
+  observaciones   String?
+  estadoActual    EstadoVisitante  @default(DESEA_SER_CONTACTADO)
+  activo          Boolean            @default(true)
+  iglesiaId       String
+  iglesia         Iglesia          @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
+  redId           String?
+  grupoId         String?
+  origenId        String?
+  origen          Origen?          @relation(fields: [origenId], references: [id], onDelete: SetNull)
+  consolidadorId  String?
+  consolidador    Usuario?         @relation("ConsolidadorAsignado", fields: [consolidadorId], references: [id], onDelete: SetNull)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  historial VisitanteHistorial[]
+}
+
+model VisitanteHistorial {
+  id             String           @id @default(cuid())
+  visitanteId    String
+  visitante      Visitante        @relation(fields: [visitanteId], references: [id], onDelete: Cascade)
+  deEstado       EstadoVisitante?
+  aEstado        EstadoVisitante
+  fechaCambio    DateTime         @default(now())
+  fechaContacto  DateTime?
+  cambiadoPorId  String?
+  cambiadoPor    Usuario?         @relation("CambiadoPor", fields: [cambiadoPorId], references: [id], onDelete: SetNull)
+  observaciones  String?
+}
