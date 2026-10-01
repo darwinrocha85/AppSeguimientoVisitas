@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # sqlite local (nunca commitear la base de datos)
 *.db
@@ -39,6 +40,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# notas locales de ejecución (contienen usuarios/claves demo, no publicar)
+run.md
 
 # typescript
 *.tsbuildinfo

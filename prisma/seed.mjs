@@ -82,9 +82,17 @@ async function asegurarVisitante(d, historial) {
 }
 
 async function main() {
-  // Superadmin
+  // Superadmin inicial. Las credenciales solo viven en variables de entorno
+  // locales o de Vercel (SEED_SUPERADMIN / SEED_PASSWORD); nunca en git.
+  // En Vercel: define SEED_SUPERADMIN y SEED_PASSWORD en el dashboard y
+  // ejecuta el seed una vez contra PostgreSQL (DATABASE_URL de producción).
   const saUser = process.env.SEED_SUPERADMIN ?? "SuperAdmin";
-  const saPass = process.env.SEED_PASSWORD ?? "Admin1234";
+  const saPass = process.env.SEED_PASSWORD;
+  if (!saPass) {
+    throw new Error(
+      "Falta SEED_PASSWORD en el entorno. Definela solo en local/Vercel, nunca la publiques en git."
+    );
+  }
   if (!(await db.usuario.findUnique({ where: { usuario: saUser } }))) {
     await db.usuario.create({
       data: {
@@ -171,8 +179,15 @@ async function main() {
   const gSur = await grupo("Grupo Sur - 301", redSur.id, sur);
   const gEste = await grupo("Grupo Este - 401", redEste.id, este);
 
-  // Personas ficticias (clave común solo para pruebas locales)
-  const hash = await bcrypt.hash("Visita123", 10);
+  // Personas ficticias de demostración. La clave común solo vive en el
+  // entorno local (SEED_DEMO_PASSWORD); nunca se publica en git.
+  const demoPass = process.env.SEED_DEMO_PASSWORD;
+  if (!demoPass) {
+    throw new Error(
+      "Falta SEED_DEMO_PASSWORD en el entorno. Definela solo en local, nunca la publiques en git."
+    );
+  }
+  const hash = await bcrypt.hash(demoPass, 10);
   const pastor = await asegurarUsuario(hash, {
     usuario: "pastor.juan",
     nombre: "Juan",
