@@ -37,6 +37,22 @@ export async function PUT(
     });
     if (!u)
       return NextResponse.json({ error: "Líder inválido" }, { status: 400 });
+    // Si la red ya tiene otro líder activo, se bloquea (primero se libera).
+    const actual = await db.red.findFirst({
+      where: { id },
+      select: { liderId: true },
+    });
+    if (actual?.liderId && actual.liderId !== datos.data.liderId) {
+      const otro = await db.usuario.findFirst({
+        where: { id: actual.liderId, activo: true },
+        select: { id: true },
+      });
+      if (otro)
+        return NextResponse.json(
+          { error: "Esa red ya tiene líder" },
+          { status: 400 }
+        );
+    }
   }
   const actualizada = await db.red.update({
     where: { id },
@@ -47,5 +63,33 @@ export async function PUT(
         : {}),
     },
   });
+  if (datos.data.liderId) {
+    // Un líder, una red: libera otras y sincroniza su alcance. Los grupos que
+    // lideraba en otra red también se liberan (lidera grupos de su red).
+    await db.red.updateMany({
+      where: { liderId: datos.data.liderId, id: { not: id } },
+      data: { liderId: null },
+    });
+    await db.grupo.updateMany({
+      where: { liderId: datos.data.liderId, redId: { not: id } },
+      data: { liderId: null },
+    });
+    const u = await db.usuario.findUnique({
+      where: { id: datos.data.liderId },
+      select: { grupoId: true },
+    });
+    let grupoId: string | null | undefined;
+    if (u?.grupoId) {
+      const g = await db.grupo.findFirst({
+        where: { id: u.grupoId, redId: id },
+        select: { id: true },
+      });
+      if (!g) grupoId = null;
+    }
+    await db.usuario.update({
+      where: { id: datos.data.liderId },
+      data: { redId: id, ...(grupoId === null ? { grupoId: null } : {}) },
+    });
+  }
   return NextResponse.json(actualizada);
 }

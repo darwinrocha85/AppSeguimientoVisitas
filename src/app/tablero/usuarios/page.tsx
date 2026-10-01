@@ -88,6 +88,7 @@ export default function Usuarios() {
   const [fIglesias, setFIglesias] = useState<string[]>([]);
   const [fRed, setFRed] = useState("");
   const [fGrupo, setFGrupo] = useState("");
+  const [fLideraGrupo, setFLideraGrupo] = useState(false);
 
   // Listas de red/grupo del formulario: se cargan para la iglesia ELEGIDA en
   // el propio formulario, no del resumen del tablero (el filtro superior puede
@@ -185,6 +186,22 @@ export default function Usuarios() {
         setGuardando(false);
         return;
       }
+      const rolEdicion = usuarios.find((x) => x.id === editandoId)?.rol;
+      if (rolEdicion === "CONSOLIDADOR" && (!editRed || !editGrupo)) {
+        setError("El consolidador requiere red y grupo");
+        setGuardando(false);
+        return;
+      }
+      if (rolEdicion === "LIDER_RED" && !editRed) {
+        setError("El líder de red requiere red");
+        setGuardando(false);
+        return;
+      }
+      if (rolEdicion === "LIDER_GRUPO" && !editGrupo) {
+        setError("El líder de grupo requiere grupo");
+        setGuardando(false);
+        return;
+      }
       cuerpo.iglesiaIds = [ig];
       cuerpo.redId = editRed || null;
       cuerpo.grupoId = editGrupo || null;
@@ -244,6 +261,26 @@ export default function Usuarios() {
       setError("Elige al menos una iglesia (máximo dos)");
       return;
     }
+    if (fRol === "CONSOLIDADOR" && !fRed) {
+      setError("El consolidador requiere red");
+      return;
+    }
+    if (fRol === "CONSOLIDADOR" && !fGrupo) {
+      setError("El consolidador requiere grupo");
+      return;
+    }
+    if (fRol === "LIDER_RED" && !fRed) {
+      setError("El líder de red requiere red");
+      return;
+    }
+    if (fRol === "LIDER_RED" && fLideraGrupo && !fGrupo) {
+      setError("Elige el grupo que también lidera");
+      return;
+    }
+    if (fRol === "LIDER_GRUPO" && !fGrupo) {
+      setError("El líder de grupo requiere grupo");
+      return;
+    }
     setError("");
     setGuardando(true);
     const r = await fetch("/api/usuarios", {
@@ -259,7 +296,15 @@ export default function Usuarios() {
         iglesiaIds: esLiderNuevo ? fIglesias : [fIglesia],
         ...(esLiderNuevo
           ? {}
-          : { redId: fRed || undefined, grupoId: fGrupo || undefined }),
+          : {
+              redId: fRed || undefined,
+              grupoId:
+                fRol === "LIDER_RED"
+                  ? fLideraGrupo
+                    ? fGrupo || undefined
+                    : undefined
+                  : fGrupo || undefined,
+            }),
       }),
     });
     setGuardando(false);
@@ -276,6 +321,7 @@ export default function Usuarios() {
     setFTelefono("");
     setFRed("");
     setFGrupo("");
+    setFLideraGrupo(false);
     await cargar();
   }
 
@@ -392,7 +438,7 @@ export default function Usuarios() {
         >
           <input aria-label="Usuario login" className={campo} placeholder="Usuario login" value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} required minLength={3} />
           <input aria-label="Contraseña" className={campo} placeholder="Contraseña (min 6)" type="password" value={fContrasena} onChange={(e) => setFContrasena(e.target.value)} required minLength={6} autoComplete="new-password" />
-          <select aria-label="Rol" className={`${campo} cursor-pointer`} value={fRol} onChange={(e) => { const r = e.target.value as Rol; setFRol(r); setFRed(""); setFGrupo(""); if (r === "LIDER_CONSOLIDADOR" && fIglesias.length === 0 && iglesias.length > 0) setFIglesias([iglesias[0].id]); }}>
+            <select aria-label="Rol" className={`${campo} cursor-pointer`} value={fRol} onChange={(e) => { const r = e.target.value as Rol; setFRol(r); setFRed(""); setFGrupo(""); setFLideraGrupo(false); if (r === "LIDER_CONSOLIDADOR" && fIglesias.length === 0 && iglesias.length > 0) setFIglesias([iglesias[0].id]); }}>
             {ROLES_CREAR.map((r) => (
               <option key={r.value} value={r.value}>{r.texto}</option>
             ))}
@@ -416,18 +462,45 @@ export default function Usuarios() {
                   <option key={ig.id} value={ig.id}>{ig.nombre}</option>
                 ))}
               </select>
-              <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} disabled={redesForm.length === 0} title={redesForm.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
-                <option value="">Red (opcional)…</option>
+              <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} required={fRol === "CONSOLIDADOR" || fRol === "LIDER_RED"} disabled={redesForm.length === 0} title={redesForm.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); setFLideraGrupo(false); }}>
+                <option value="">{fRol === "CONSOLIDADOR" || fRol === "LIDER_RED" ? "Red (requerida)…" : "Red (opcional)…"}</option>
                 {redesForm.map((r) => (
                   <option key={r.id} value={r.id}>{r.nombre}</option>
                 ))}
               </select>
-              <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} disabled={gruposForm.length === 0} title={gruposForm.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined} onChange={(e) => setFGrupo(e.target.value)}>
-                <option value="">Grupo (opcional)…</option>
-                {gruposForm.map((g) => (
-                  <option key={g.id} value={g.id}>{g.nombre}</option>
-                ))}
-              </select>
+              {fRol === "LIDER_RED" ? (
+                fRed ? (
+                  <div>
+                    <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-semibold text-navy">
+                      <input
+                        type="checkbox"
+                        checked={fLideraGrupo}
+                        onChange={(e) => {
+                          setFLideraGrupo(e.target.checked);
+                          if (!e.target.checked) setFGrupo("");
+                        }}
+                        className="h-5 w-5 accent-[#204B6E]"
+                      />
+                      También es líder de un grupo
+                    </label>
+                    {fLideraGrupo && (
+                      <select aria-label="Grupo que también lidera" className={`${campo} mt-2 w-full cursor-pointer`} value={fGrupo} required disabled={gruposForm.length === 0} title={gruposForm.length === 0 ? "Esta red aún no tiene grupos: créalos en la ficha de la iglesia" : undefined} onChange={(e) => setFGrupo(e.target.value)}>
+                        <option value="">Grupo (requerido)…</option>
+                        {gruposForm.map((g) => (
+                          <option key={g.id} value={g.id}>{g.nombre}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                ) : null
+              ) : (
+                <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} required={fRol === "CONSOLIDADOR" || fRol === "LIDER_GRUPO"} disabled={gruposForm.length === 0} title={gruposForm.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined} onChange={(e) => setFGrupo(e.target.value)}>
+                  <option value="">{fRol === "CONSOLIDADOR" || fRol === "LIDER_GRUPO" ? "Grupo (requerido)…" : "Grupo (opcional)…"}</option>
+                  {gruposForm.map((g) => (
+                    <option key={g.id} value={g.id}>{g.nombre}</option>
+                  ))}
+                </select>
+              )}
             </>
           )}
           <div className="md:col-span-3">
@@ -595,6 +668,7 @@ export default function Usuarios() {
                         aria-label="Red"
                         className={`${campo} cursor-pointer`}
                         value={editRed}
+                        required={u.rol === "CONSOLIDADOR" || u.rol === "LIDER_RED"}
                         disabled={redesEdicion.length === 0}
                         title={redesEdicion.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined}
                         onChange={(e) => {
@@ -602,7 +676,7 @@ export default function Usuarios() {
                           setEditGrupo("");
                         }}
                       >
-                        <option value="">Sin red…</option>
+                        <option value="">{u.rol === "CONSOLIDADOR" || u.rol === "LIDER_RED" ? "Elige la red…" : "Sin red…"}</option>
                         {redesEdicion.map((r) => (
                           <option key={r.id} value={r.id}>{r.nombre}</option>
                         ))}
@@ -611,11 +685,12 @@ export default function Usuarios() {
                         aria-label="Grupo"
                         className={`${campo} cursor-pointer`}
                         value={editGrupo}
+                        required={u.rol === "CONSOLIDADOR" || u.rol === "LIDER_GRUPO"}
                         disabled={gruposEdicion.length === 0}
-                        title={gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
+                        title={u.rol === "LIDER_RED" ? "Grupo que también lidera (opcional)" : gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
                         onChange={(e) => setEditGrupo(e.target.value)}
                       >
-                        <option value="">Sin grupo…</option>
+                        <option value="">{u.rol === "CONSOLIDADOR" || u.rol === "LIDER_GRUPO" ? "Elige el grupo…" : "Sin grupo…"}</option>
                         {gruposEdicion.map((g) => (
                           <option key={g.id} value={g.id}>{g.nombre}</option>
                         ))}

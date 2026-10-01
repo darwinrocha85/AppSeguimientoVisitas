@@ -31,10 +31,13 @@ export async function GET(req: Request) {
   if (!iglesia)
     return NextResponse.json({ error: "Iglesia inválida" }, { status: 400 });
 
+  // Para liderar un grupo valen líderes de grupo y de red (de su red).
+  const roles =
+    rol === "LIDER_GRUPO" ? ["LIDER_RED", "LIDER_GRUPO"] : [rol as string];
   const lista = await db.usuario.findMany({
     where: {
       activo: true,
-      rol: rol as "LIDER_RED" | "LIDER_GRUPO" | "CONSOLIDADOR",
+      rol: { in: roles as ("LIDER_RED" | "LIDER_GRUPO" | "CONSOLIDADOR")[] },
       iglesias: { some: { iglesiaId } },
     },
     select: { id: true, nombre: true, apellido: true, usuario: true },

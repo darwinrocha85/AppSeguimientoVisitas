@@ -233,6 +233,23 @@ export async function POST(req: Request) {
   // El líder consolidador es nivel iglesia: sin red ni grupo.
   const esLiderConsol = d.rol === "LIDER_CONSOLIDADOR";
   const iglesiaId = d.iglesiaIds[0];
+  // Asignación obligatoria por rol: el raso consolida en su grupo y cada
+  // líder en lo suyo. Sin esto un líder sin asignación ve de más (alcance).
+  if (d.rol === "CONSOLIDADOR" && (!d.redId || !d.grupoId))
+    return NextResponse.json(
+      { error: "El consolidador requiere red y grupo" },
+      { status: 400 }
+    );
+  if (d.rol === "LIDER_RED" && !d.redId)
+    return NextResponse.json(
+      { error: "El líder de red requiere red" },
+      { status: 400 }
+    );
+  if (d.rol === "LIDER_GRUPO" && !d.grupoId)
+    return NextResponse.json(
+      { error: "El líder de grupo requiere grupo" },
+      { status: 400 }
+    );
   if (!esLiderConsol && d.redId) {
     const r = await db.red.findFirst({
       where: { id: d.redId, iglesiaId, activo: true },
@@ -264,6 +281,43 @@ export async function POST(req: Request) {
       { status: 409 }
     );
 
+  // Liderazgo directo al crear (sin paso extra en la ficha). Si la red o el
+  // grupo ya tienen otro líder activo, se bloquea.
+  const lideraRed = d.rol === "LIDER_RED" && !!d.redId;
+  const lideraGrupo =
+    (d.rol === "LIDER_GRUPO" || d.rol === "LIDER_RED") && !!d.grupoId;
+  async function ocupado(
+    donde: "red" | "grupo",
+    id: string
+  ): Promise<boolean> {
+    const liderId =
+      donde === "red"
+        ? (await db.red.findFirst({ where: { id }, select: { liderId: true } }))
+            ?.liderId
+        : (
+            await db.grupo.findFirst({
+              where: { id },
+              select: { liderId: true },
+            })
+          )?.liderId;
+    if (!liderId) return false;
+    const otro = await db.usuario.findFirst({
+      where: { id: liderId, activo: true },
+      select: { id: true },
+    });
+    return !!otro;
+  }
+  if (lideraRed && (await ocupado("red", d.redId!)))
+    return NextResponse.json(
+      { error: "Esa red ya tiene líder" },
+      { status: 400 }
+    );
+  if (lideraGrupo && (await ocupado("grupo", d.grupoId!)))
+    return NextResponse.json(
+      { error: "Ese grupo ya tiene líder" },
+      { status: 400 }
+    );
+
   const passwordHash = await bcrypt.hash(d.contrasena, 10);
   const creado = await db.usuario.create({
     data: {
@@ -281,5 +335,15 @@ export async function POST(req: Request) {
     },
     include: { iglesias: { include: { iglesia: true } } },
   });
+  if (lideraRed)
+    await db.red.update({
+      where: { id: d.redId! },
+      data: { liderId: creado.id },
+    });
+  if (lideraGrupo)
+    await db.grupo.update({
+      where: { id: d.grupoId! },
+      data: { liderId: creado.id },
+    });
   return NextResponse.json(sinHash(creado), { status: 201 });
 }

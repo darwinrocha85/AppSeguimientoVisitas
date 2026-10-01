@@ -135,6 +135,105 @@ export async function PUT(
       return NextResponse.json({ error: "Grupo inválido" }, { status: 400 });
   }
 
+  // Asignación obligatoria por rol (editar): no se puede dejar sin red/grupo.
+  const nuevaRed = datos.data.redId;
+  const nuevoGrupo = datos.data.grupoId;
+  const redFinal = nuevaRed !== undefined ? nuevaRed : actual.redId;
+  const grupoFinal = nuevoGrupo !== undefined ? nuevoGrupo : actual.grupoId;
+  if (actual.rol === "CONSOLIDADOR" && (!redFinal || !grupoFinal))
+    return NextResponse.json(
+      { error: "El consolidador requiere red y grupo" },
+      { status: 400 }
+    );
+  if (actual.rol === "LIDER_RED" && !redFinal)
+    return NextResponse.json(
+      { error: "El líder de red requiere red" },
+      { status: 400 }
+    );
+  if (actual.rol === "LIDER_GRUPO" && !grupoFinal)
+    return NextResponse.json(
+      { error: "El líder de grupo requiere grupo" },
+      { status: 400 }
+    );
+
+  // Traspaso de liderazgo al cambiar de red/grupo: libera el anterior (si lo
+  // tenía) y reclama el nuevo. Destino con otro líder activo → se bloquea.
+  async function destinoOcupado(
+    donde: "red" | "grupo",
+    destinoId: string
+  ): Promise<boolean> {
+    const liderId =
+      donde === "red"
+        ? (
+            await db.red.findFirst({
+              where: { id: destinoId },
+              select: { liderId: true },
+            })
+          )?.liderId
+        : (
+            await db.grupo.findFirst({
+              where: { id: destinoId },
+              select: { liderId: true },
+            })
+          )?.liderId;
+    if (!liderId || liderId === id) return false;
+    const otro = await db.usuario.findFirst({
+      where: { id: liderId, activo: true },
+      select: { id: true },
+    });
+    return !!otro;
+  }
+  const cambiaRed =
+    actual.rol === "LIDER_RED" &&
+    nuevaRed !== undefined &&
+    nuevaRed !== actual.redId;
+  const cambiaGrupo =
+    (actual.rol === "LIDER_GRUPO" || actual.rol === "LIDER_RED") &&
+    nuevoGrupo !== undefined &&
+    nuevoGrupo !== actual.grupoId;
+  if (cambiaRed && nuevaRed && (await destinoOcupado("red", nuevaRed)))
+    return NextResponse.json(
+      { error: "Esa red ya tiene líder" },
+      { status: 400 }
+    );
+  if (cambiaGrupo && nuevoGrupo && (await destinoOcupado("grupo", nuevoGrupo)))
+    return NextResponse.json(
+      { error: "Ese grupo ya tiene líder" },
+      { status: 400 }
+    );
+  // El grupo que también lidera un líder de red debe ser de su propia red.
+  if (actual.rol === "LIDER_RED" && nuevoGrupo && redFinal) {
+    const propio = await db.grupo.findFirst({
+      where: { id: nuevoGrupo, redId: redFinal },
+      select: { id: true },
+    });
+    if (!propio)
+      return NextResponse.json(
+        { error: "El grupo debe ser de su red" },
+        { status: 400 }
+      );
+  }
+  if (cambiaRed && actual.redId)
+    await db.red.updateMany({
+      where: { id: actual.redId, liderId: id },
+      data: { liderId: null },
+    });
+  if (cambiaGrupo && actual.grupoId)
+    await db.grupo.updateMany({
+      where: { id: actual.grupoId, liderId: id },
+      data: { liderId: null },
+    });
+  if (cambiaRed && nuevaRed)
+    await db.red.update({
+      where: { id: nuevaRed },
+      data: { liderId: id },
+    });
+  if (cambiaGrupo && nuevoGrupo)
+    await db.grupo.update({
+      where: { id: nuevoGrupo },
+      data: { liderId: id },
+    });
+
   const actualizado = await db.usuario.update({
     where: { id },
     data: {
@@ -221,5 +320,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
 
   await db.usuario.update({ where: { id }, data: { activo: false } });
+  // Libera las redes/grupos que lideraba (si no, quedarían ocupadas por
+  // alguien inactivo y bloquearían al siguiente líder).
+  await db.red.updateMany({
+    where: { liderId: id },
+    data: { liderId: null },
+  });
+  await db.grupo.updateMany({
+    where: { liderId: id },
+    data: { liderId: null },
+  });
   return NextResponse.json({ ok: true });
 }
