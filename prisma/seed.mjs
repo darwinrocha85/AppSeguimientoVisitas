@@ -119,6 +119,14 @@ async function main() {
     origen[o.nombre] = o.id;
   }
 
+  // Modo mínimo (producción/Vercel): solo superadmin + catálogo global de
+  // orígenes, sin iglesias, usuarios ni visitantes ficticios. Uso:
+  // SKIP_DEMO=1 node prisma/seed.mjs (en PowerShell: $env:SKIP_DEMO="1").
+  if (process.env.SKIP_DEMO === "1") {
+    console.log("Seed mínimo: solo superadmin, sin datos ficticios.");
+    return;
+  }
+
   // Iglesias ficticias
   const central = await asegurarIglesia(
     "I. Cuadrangular Central",
