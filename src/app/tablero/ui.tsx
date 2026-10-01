@@ -312,6 +312,7 @@ function Filtro({
   opciones,
   aria,
   deshabilitado = false,
+  motivoDeshabilitado,
 }: {
   etiqueta: string;
   colorEtiqueta: string;
@@ -321,13 +322,18 @@ function Filtro({
   opciones: { value: string; texto: string }[];
   aria: string;
   deshabilitado?: boolean;
+  motivoDeshabilitado?: string;
 }) {
   return (
     <label
       className={`flex min-h-[44px] items-center gap-2 rounded-full border border-sand bg-white px-3 py-1 text-sm ${
         deshabilitado ? "cursor-not-allowed opacity-50" : ""
       }`}
-      title={deshabilitado ? "Sin opciones en este alcance" : undefined}
+      title={
+        deshabilitado
+          ? (motivoDeshabilitado ?? "Sin opciones en este alcance")
+          : undefined
+      }
     >
       <span className="text-zinc-500">
         <Icono className="h-4 w-4">{icono}</Icono>
@@ -437,6 +443,9 @@ export function Cascaron({ children }: { children: ReactNode }) {
     () => iglesias.find((i) => i.id === iglesiaId) ?? null,
     [iglesias, iglesiaId]
   );
+  // Cascada: sin iglesia elegida ("Todas") no hay red/grupo/consolidador;
+  // las estadísticas agregan todas las iglesias del alcance.
+  const iglesiaTodas = iglesiaId === "";
   const gruposDisponibles = useMemo(
     () =>
       (resumen?.grupos ?? []).filter((g) => red === "todas" || g.redId === red),
@@ -481,7 +490,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
   // En cascada: red → grupo → consolidador.
   /* eslint-disable react-hooks/set-state-in-effect -- autoselección en cascada */
   useEffect(() => {
-    if (cargando || !resumen || esRaso) return;
+    if (cargando || !resumen || esRaso || iglesiaTodas) return;
     if (!redFija && red === "todas" && (resumen.redes?.length ?? 0) === 1) {
       setRed(resumen.redes[0].id);
       setGrupo("todos");
@@ -500,6 +509,7 @@ export function Cascaron({ children }: { children: ReactNode }) {
     cargando,
     resumen,
     esRaso,
+    iglesiaTodas,
     redFija,
     grupoFijo,
     red,
@@ -551,7 +561,14 @@ export function Cascaron({ children }: { children: ReactNode }) {
               className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/[0.07] via-transparent to-black/10"
             />
             <div className="relative flex min-w-0 items-center gap-3">
-              <LogoMini />
+              <Link
+                href="/tablero/dashboard"
+                title="Ir al inicio"
+                aria-label="Ir al inicio"
+                className="rounded-[9px] transition-opacity duration-200 hover:opacity-80"
+              >
+                <LogoMini />
+              </Link>
               <div className="hidden leading-[1.05] sm:block">
                 <p className="text-[13px] leading-none font-black tracking-[0.18em]">
                   I. CUADRANGULAR
@@ -628,7 +645,14 @@ export function Cascaron({ children }: { children: ReactNode }) {
         <div className="border-b border-sand/60 bg-paper">
           <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <LogoMini className="h-10 w-10" />
+              <Link
+                href="/tablero/dashboard"
+                title="Ir al inicio"
+                aria-label="Ir al inicio"
+                className="rounded-[9px] transition-opacity duration-200 hover:opacity-80"
+              >
+                <LogoMini className="h-10 w-10" />
+              </Link>
               <div className="leading-tight">
                 <p className="text-[13px] font-black tracking-[0.14em]">
                   I. CUADRANGULAR
@@ -756,7 +780,10 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 setConsolidador("todos");
               }}
               aria="Filtrar por red"
-              deshabilitado={redFija || (resumen?.redes.length ?? 0) === 0}
+              deshabilitado={redFija || iglesiaTodas || (resumen?.redes.length ?? 0) === 0}
+              motivoDeshabilitado={
+                iglesiaTodas ? "Elige una iglesia primero" : undefined
+              }
               opciones={[
                 { value: "todas", texto: "Todas" },
                 ...(resumen?.redes.map((r) => ({
@@ -775,7 +802,10 @@ export function Cascaron({ children }: { children: ReactNode }) {
                 setConsolidador("todos");
               }}
               aria="Filtrar por grupo"
-              deshabilitado={grupoFijo || gruposDisponibles.length === 0}
+              deshabilitado={grupoFijo || iglesiaTodas || gruposDisponibles.length === 0}
+              motivoDeshabilitado={
+                iglesiaTodas ? "Elige una iglesia primero" : undefined
+              }
               opciones={[
                 { value: "todos", texto: "Todos" },
                 ...gruposDisponibles.map((g) => ({
@@ -791,7 +821,10 @@ export function Cascaron({ children }: { children: ReactNode }) {
               value={consolidadorValido}
               onChange={setConsolidador}
               aria="Filtrar por consolidador"
-              deshabilitado={rasosDisponibles.length === 0}
+              deshabilitado={iglesiaTodas || rasosDisponibles.length === 0}
+              motivoDeshabilitado={
+                iglesiaTodas ? "Elige una iglesia primero" : undefined
+              }
               opciones={[
                 { value: "todos", texto: "Todos" },
                 ...rasosDisponibles.map((c) => ({
