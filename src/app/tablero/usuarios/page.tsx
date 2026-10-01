@@ -28,6 +28,8 @@ type Usuario = {
   iglesias: { iglesia: { id: string; nombre: string } }[];
 };
 
+type OpcionAlcance = { id: string; nombre: string };
+
 const campo =
   "min-h-[44px] rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none placeholder:text-[#B8A99A]/70 focus:border-navy/30 focus:ring-4 focus:ring-navy/[0.06]";
 
@@ -48,7 +50,6 @@ export default function Usuarios() {
     red,
     grupo,
     consolidador,
-    resumen,
     sesion,
   } = useTablero();
   const esSuper = sesion?.rol === "SUPERADMIN";
@@ -87,6 +88,14 @@ export default function Usuarios() {
   const [fIglesias, setFIglesias] = useState<string[]>([]);
   const [fRed, setFRed] = useState("");
   const [fGrupo, setFGrupo] = useState("");
+
+  // Listas de red/grupo del formulario: se cargan para la iglesia ELEGIDA en
+  // el propio formulario, no del resumen del tablero (el filtro superior puede
+  // apuntar a otra iglesia y dejaría los desplegables vacíos).
+  const [redesForm, setRedesForm] = useState<OpcionAlcance[]>([]);
+  const [gruposForm, setGruposForm] = useState<OpcionAlcance[]>([]);
+  const [redesEdicion, setRedesEdicion] = useState<OpcionAlcance[]>([]);
+  const [gruposEdicion, setGruposEdicion] = useState<OpcionAlcance[]>([]);
 
   async function cargar() {
     const qs = new URLSearchParams();
@@ -270,6 +279,59 @@ export default function Usuarios() {
     await cargar();
   }
 
+  // Red/grupo del formulario de creación, según su iglesia elegida.
+  const mostrarAlcanceCrear =
+    esGestorUi && creando && fRol !== "LIDER_CONSOLIDADOR" && !!fIglesia;
+  useEffect(() => {
+    async function cargarListas() {
+      if (!mostrarAlcanceCrear) {
+        setRedesForm([]);
+        setGruposForm([]);
+        return;
+      }
+      const [rr, gg] = await Promise.all([
+        fetch(`/api/redes?iglesiaId=${fIglesia}`),
+        fetch(
+          fRed
+            ? `/api/grupos?redId=${fRed}`
+            : `/api/grupos?iglesiaId=${fIglesia}`
+        ),
+      ]);
+      setRedesForm(rr.ok ? await rr.json() : []);
+      setGruposForm(gg.ok ? await gg.json() : []);
+    }
+    void cargarListas();
+  }, [mostrarAlcanceCrear, fIglesia, fRed]);
+
+  // Red/grupo del formulario de edición, según la iglesia del usuario.
+  const usuarioEdicion = usuarios.find((x) => x.id === editandoId) ?? null;
+  const iglesiaEdicion = usuarioEdicion?.iglesias[0]?.iglesia.id ?? "";
+  const mostrarAlcanceEdicion =
+    !!usuarioEdicion &&
+    !esSuper &&
+    usuarioEdicion.rol !== "LIDER_CONSOLIDADOR" &&
+    !!iglesiaEdicion;
+  useEffect(() => {
+    async function cargarListas() {
+      if (!mostrarAlcanceEdicion) {
+        setRedesEdicion([]);
+        setGruposEdicion([]);
+        return;
+      }
+      const [rr, gg] = await Promise.all([
+        fetch(`/api/redes?iglesiaId=${iglesiaEdicion}`),
+        fetch(
+          editRed
+            ? `/api/grupos?redId=${editRed}`
+            : `/api/grupos?iglesiaId=${iglesiaEdicion}`
+        ),
+      ]);
+      setRedesEdicion(rr.ok ? await rr.json() : []);
+      setGruposEdicion(gg.ok ? await gg.json() : []);
+    }
+    void cargarListas();
+  }, [mostrarAlcanceEdicion, iglesiaEdicion, editRed]);
+
   if (cargando) {
     return <p className="text-sm font-semibold text-navy">Cargando usuarios…</p>;
   }
@@ -282,11 +344,6 @@ export default function Usuarios() {
       />
     );
   }
-
-  const redesDe = (iglesia: string) =>
-    (resumen?.redes ?? []).filter((r) => !iglesia || r.iglesiaId === iglesia);
-  const gruposDe = (redId: string) =>
-    (resumen?.grupos ?? []).filter((g) => !redId || g.redId === redId);
 
   return (
     <section className="rounded-2xl border border-sand/60 bg-white p-4">
@@ -359,15 +416,15 @@ export default function Usuarios() {
                   <option key={ig.id} value={ig.id}>{ig.nombre}</option>
                 ))}
               </select>
-              <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
+              <select aria-label="Red" className={`${campo} cursor-pointer`} value={fRed} disabled={redesForm.length === 0} title={redesForm.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined} onChange={(e) => { setFRed(e.target.value); setFGrupo(""); }}>
                 <option value="">Red (opcional)…</option>
-                {redesDe(fIglesia).map((r) => (
+                {redesForm.map((r) => (
                   <option key={r.id} value={r.id}>{r.nombre}</option>
                 ))}
               </select>
-              <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} onChange={(e) => setFGrupo(e.target.value)}>
+              <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={fGrupo} disabled={gruposForm.length === 0} title={gruposForm.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined} onChange={(e) => setFGrupo(e.target.value)}>
                 <option value="">Grupo (opcional)…</option>
-                {gruposDe(fRed).map((g) => (
+                {gruposForm.map((g) => (
                   <option key={g.id} value={g.id}>{g.nombre}</option>
                 ))}
               </select>
@@ -538,13 +595,15 @@ export default function Usuarios() {
                         aria-label="Red"
                         className={`${campo} cursor-pointer`}
                         value={editRed}
+                        disabled={redesEdicion.length === 0}
+                        title={redesEdicion.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined}
                         onChange={(e) => {
                           setEditRed(e.target.value);
                           setEditGrupo("");
                         }}
                       >
                         <option value="">Sin red…</option>
-                        {redesDe(u.iglesias[0]?.iglesia.id ?? "").map((r) => (
+                        {redesEdicion.map((r) => (
                           <option key={r.id} value={r.id}>{r.nombre}</option>
                         ))}
                       </select>
@@ -552,10 +611,12 @@ export default function Usuarios() {
                         aria-label="Grupo"
                         className={`${campo} cursor-pointer`}
                         value={editGrupo}
+                        disabled={gruposEdicion.length === 0}
+                        title={gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
                         onChange={(e) => setEditGrupo(e.target.value)}
                       >
                         <option value="">Sin grupo…</option>
-                        {gruposDe(editRed).map((g) => (
+                        {gruposEdicion.map((g) => (
                           <option key={g.id} value={g.id}>{g.nombre}</option>
                         ))}
                       </select>
