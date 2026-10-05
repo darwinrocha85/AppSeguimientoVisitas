@@ -69,6 +69,7 @@ export default function Usuarios() {
   const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [editRol, setEditRol] = useState<Rol>("CONSOLIDADOR");
   const [asignadas, setAsignadas] = useState<string[]>([]);
   const [editRed, setEditRed] = useState("");
   const [editGrupo, setEditGrupo] = useState("");
@@ -147,6 +148,7 @@ export default function Usuarios() {
     setNombre(u.nombre);
     setApellido(u.apellido);
     setTelefono(u.telefono ? soloDigitos(u.telefono) : "");
+    setEditRol(u.rol);
     setAsignadas(u.iglesias.map((x) => x.iglesia.id));
     setEditRed(u.redId ?? "");
     setEditGrupo(u.grupoId ?? "");
@@ -167,6 +169,10 @@ export default function Usuarios() {
       apellido,
       telefono: telefono || null,
     };
+    const editado = usuarios.find((x) => x.id === editandoId);
+    const rolFinal = editado && ROLES_BAJOS.some((r) => r.value === editado.rol) ? editRol : editado?.rol;
+    const cambiaRol = !!editado && rolFinal !== editado.rol;
+    if (cambiaRol) cuerpo.rol = rolFinal;
     if (esSuper) {
       cuerpo.iglesiaIds = asignadas;
     } else if (
@@ -186,7 +192,15 @@ export default function Usuarios() {
         setGuardando(false);
         return;
       }
-      const rolEdicion = usuarios.find((x) => x.id === editandoId)?.rol;
+      const rolEdicion = rolFinal;
+      if (
+        (rolEdicion === "LIDER_RED" || rolEdicion === "LIDER_GRUPO") &&
+        !soloDigitos(telefono)
+      ) {
+        setError("Teléfono obligatorio (9 dígitos)");
+        setGuardando(false);
+        return;
+      }
       if (rolEdicion === "CONSOLIDADOR" && (!editRed || !editGrupo)) {
         setError("El consolidador requiere red y grupo");
         setGuardando(false);
@@ -203,8 +217,10 @@ export default function Usuarios() {
         return;
       }
       cuerpo.iglesiaIds = [ig];
-      cuerpo.redId = editRed || null;
+      // A líder de grupo solo se le manda el grupo: la red se deriva en el
+      // servidor (así no choca con la red anterior al cambiar de grupo).
       cuerpo.grupoId = editGrupo || null;
+      if (rolFinal !== "LIDER_GRUPO") cuerpo.redId = editRed || null;
     }
     const r = await fetch(`/api/usuarios/${editandoId}`, {
       method: "PUT",
@@ -367,7 +383,9 @@ export default function Usuarios() {
       const [rr, gg] = await Promise.all([
         fetch(`/api/redes?iglesiaId=${iglesiaEdicion}`),
         fetch(
-          editRed
+          // Al líder de grupo se le muestran todos los grupos de la iglesia
+          // (la red se deriva del grupo elegido).
+          editRed && editRol !== "LIDER_GRUPO"
             ? `/api/grupos?redId=${editRed}`
             : `/api/grupos?iglesiaId=${iglesiaEdicion}`
         ),
@@ -376,7 +394,7 @@ export default function Usuarios() {
       setGruposEdicion(gg.ok ? await gg.json() : []);
     }
     void cargarListas();
-  }, [mostrarAlcanceEdicion, iglesiaEdicion, editRed]);
+  }, [mostrarAlcanceEdicion, iglesiaEdicion, editRed, editRol]);
 
   if (cargando) {
     return <p className="text-sm font-semibold text-navy">Cargando usuarios…</p>;
@@ -664,11 +682,23 @@ export default function Usuarios() {
                     </div>
                   ) : (
                     <>
+                      {!esSuper && ROLES_BAJOS.some((r) => r.value === u.rol) && (
+                        <select
+                          aria-label="Rol"
+                          className={`${campo} cursor-pointer`}
+                          value={editRol}
+                          onChange={(e) => setEditRol(e.target.value as Rol)}
+                        >
+                          {ROLES_BAJOS.map((r) => (
+                            <option key={r.value} value={r.value}>{r.texto}</option>
+                          ))}
+                        </select>
+                      )}
                       <select
                         aria-label="Red"
                         className={`${campo} cursor-pointer`}
                         value={editRed}
-                        required={u.rol === "CONSOLIDADOR" || u.rol === "LIDER_RED"}
+                        required={editRol === "CONSOLIDADOR" || editRol === "LIDER_RED"}
                         disabled={redesEdicion.length === 0}
                         title={redesEdicion.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined}
                         onChange={(e) => {
@@ -676,7 +706,7 @@ export default function Usuarios() {
                           setEditGrupo("");
                         }}
                       >
-                        <option value="">{u.rol === "CONSOLIDADOR" || u.rol === "LIDER_RED" ? "Elige la red…" : "Sin red…"}</option>
+                        <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_RED" ? "Elige la red…" : "Sin red…"}</option>
                         {redesEdicion.map((r) => (
                           <option key={r.id} value={r.id}>{r.nombre}</option>
                         ))}
@@ -685,12 +715,12 @@ export default function Usuarios() {
                         aria-label="Grupo"
                         className={`${campo} cursor-pointer`}
                         value={editGrupo}
-                        required={u.rol === "CONSOLIDADOR" || u.rol === "LIDER_GRUPO"}
+                        required={editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO"}
                         disabled={gruposEdicion.length === 0}
-                        title={u.rol === "LIDER_RED" ? "Grupo que también lidera (opcional)" : gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
+                        title={editRol === "LIDER_RED" ? "Grupo que también lidera (opcional)" : gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
                         onChange={(e) => setEditGrupo(e.target.value)}
                       >
-                        <option value="">{u.rol === "CONSOLIDADOR" || u.rol === "LIDER_GRUPO" ? "Elige el grupo…" : "Sin grupo…"}</option>
+                        <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO" ? "Elige el grupo…" : "Sin grupo…"}</option>
                         {gruposEdicion.map((g) => (
                           <option key={g.id} value={g.id}>{g.nombre}</option>
                         ))}

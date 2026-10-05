@@ -7,11 +7,15 @@ import { esGestor } from "@/lib/alcance";
 import { esSuperadmin } from "@/lib/permisos";
 import { TELEFONO_AYUDA, TELEFONO_REGEX } from "@/lib/telefono";
 
+const ROLES_BAJOS = ["LIDER_RED", "LIDER_GRUPO", "CONSOLIDADOR"] as const;
+
 const Esquema = z.object({
   nombre: z.string().min(1).optional(),
   apellido: z.string().min(1).optional(),
   telefono: z.string().regex(TELEFONO_REGEX, TELEFONO_AYUDA).nullable().optional(),
   contrasena: z.string().min(6).optional(),
+  // Cambio de rol entre operativos (nunca a pastor ni líder consolidador).
+  rol: z.enum(ROLES_BAJOS).optional(),
   iglesiaIds: z.array(z.string()).min(1).max(2).optional(),
   redId: z.string().nullable().optional(),
   grupoId: z.string().nullable().optional(),
@@ -71,11 +75,24 @@ export async function PUT(
   const datos = Esquema.safeParse(await req.json().catch(() => null));
   if (!datos.success)
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
-  // Teléfono obligatorio para pastor y los tres niveles de líderes.
+  // Cambio de rol: solo gestores, solo entre operativos y solo si el usuario
+  // ya es operativo (pastor, líder consolidador y superadmin no cambian).
+  const rolFinal = datos.data.rol ?? actual.rol;
+  const cambiaRol = rolFinal !== actual.rol;
+  if (cambiaRol) {
+    if (!gestor || esSuperadmin(s))
+      return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+    if (!(ROLES_BAJOS as readonly string[]).includes(actual.rol))
+      return NextResponse.json(
+        { error: "Ese rol no se puede cambiar" },
+        { status: 403 }
+      );
+  }
+  // Teléfono obligatorio para pastor y los tres niveles de líderes (nuevo rol).
   const telFinal = datos.data.telefono !== undefined ? datos.data.telefono : actual.telefono;
   if (
     ["PASTOR", "LIDER_CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO"].includes(
-      actual.rol
+      rolFinal
     ) &&
     !telFinal
   ) {
@@ -135,22 +152,23 @@ export async function PUT(
       return NextResponse.json({ error: "Grupo inválido" }, { status: 400 });
   }
 
-  // Asignación obligatoria por rol (editar): no se puede dejar sin red/grupo.
+  // Asignación obligatoria por rol (editar, con el rol final): no se puede
+  // dejar sin red/grupo lo que el nuevo rol exige.
   const nuevaRed = datos.data.redId;
   const nuevoGrupo = datos.data.grupoId;
   const redFinal = nuevaRed !== undefined ? nuevaRed : actual.redId;
   const grupoFinal = nuevoGrupo !== undefined ? nuevoGrupo : actual.grupoId;
-  if (actual.rol === "CONSOLIDADOR" && (!redFinal || !grupoFinal))
+  if (rolFinal === "CONSOLIDADOR" && (!redFinal || !grupoFinal))
     return NextResponse.json(
       { error: "El consolidador requiere red y grupo" },
       { status: 400 }
     );
-  if (actual.rol === "LIDER_RED" && !redFinal)
+  if (rolFinal === "LIDER_RED" && !redFinal)
     return NextResponse.json(
       { error: "El líder de red requiere red" },
       { status: 400 }
     );
-  if (actual.rol === "LIDER_GRUPO" && !grupoFinal)
+  if (rolFinal === "LIDER_GRUPO" && !grupoFinal)
     return NextResponse.json(
       { error: "El líder de grupo requiere grupo" },
       { status: 400 }
@@ -183,28 +201,37 @@ export async function PUT(
     });
     return !!otro;
   }
-  const cambiaRed =
-    actual.rol === "LIDER_RED" &&
-    nuevaRed !== undefined &&
-    nuevaRed !== actual.redId;
-  const cambiaGrupo =
-    (actual.rol === "LIDER_GRUPO" || actual.rol === "LIDER_RED") &&
-    nuevoGrupo !== undefined &&
-    nuevoGrupo !== actual.grupoId;
-  if (cambiaRed && nuevaRed && (await destinoOcupado("red", nuevaRed)))
+  // Quién lidera qué con el rol final (cambio de rol o de alcance):
+  // - LIDER_RED lidera su red (y opcionalmente un grupo de esa red).
+  // - LIDER_GRUPO lidera su grupo. CONSOLIDADOR no lidera nada.
+  // Reclama aunque la red/grupo no cambie (p. ej. consolidador que pasa a
+  // líder en el mismo grupo); libera lo que el rol final ya no lidera.
+  const lideraRedFinal = rolFinal === "LIDER_RED";
+  const lideraGrupoFinal = rolFinal === "LIDER_GRUPO" || rolFinal === "LIDER_RED";
+  const liderRedDestino = redFinal
+    ? (await db.red.findFirst({ where: { id: redFinal }, select: { liderId: true } }))?.liderId ?? null
+    : null;
+  const liderGrupoDestino = grupoFinal
+    ? (await db.grupo.findFirst({ where: { id: grupoFinal }, select: { liderId: true } }))?.liderId ?? null
+    : null;
+  const reclamaRed = lideraRedFinal && !!redFinal && liderRedDestino !== id;
+  const reclamaGrupo = lideraGrupoFinal && !!grupoFinal && liderGrupoDestino !== id;
+  const liberaRed = !!actual.redId && (!lideraRedFinal || actual.redId !== redFinal);
+  const liberaGrupo = !!actual.grupoId && (!lideraGrupoFinal || actual.grupoId !== grupoFinal);
+  if (reclamaRed && redFinal && (await destinoOcupado("red", redFinal)))
     return NextResponse.json(
       { error: "Esa red ya tiene líder" },
       { status: 400 }
     );
-  if (cambiaGrupo && nuevoGrupo && (await destinoOcupado("grupo", nuevoGrupo)))
+  if (reclamaGrupo && grupoFinal && (await destinoOcupado("grupo", grupoFinal)))
     return NextResponse.json(
       { error: "Ese grupo ya tiene líder" },
       { status: 400 }
     );
   // El grupo que también lidera un líder de red debe ser de su propia red.
-  if (actual.rol === "LIDER_RED" && nuevoGrupo && redFinal) {
+  if (rolFinal === "LIDER_RED" && grupoFinal && redFinal) {
     const propio = await db.grupo.findFirst({
-      where: { id: nuevoGrupo, redId: redFinal },
+      where: { id: grupoFinal, redId: redFinal },
       select: { id: true },
     });
     if (!propio)
@@ -213,24 +240,34 @@ export async function PUT(
         { status: 400 }
       );
   }
-  if (cambiaRed && actual.redId)
+  // A líder de grupo la red se deriva de su grupo (sin pedirla): así un
+  // cambio de grupo a otra red no choca con la red anterior.
+  let redIdFinal = datos.data.redId;
+  if (rolFinal === "LIDER_GRUPO" && redIdFinal === undefined && grupoFinal) {
+    const g = await db.grupo.findFirst({
+      where: { id: grupoFinal },
+      select: { redId: true },
+    });
+    if (g) redIdFinal = g.redId;
+  }
+  if (liberaRed && actual.redId)
     await db.red.updateMany({
       where: { id: actual.redId, liderId: id },
       data: { liderId: null },
     });
-  if (cambiaGrupo && actual.grupoId)
+  if (liberaGrupo && actual.grupoId)
     await db.grupo.updateMany({
       where: { id: actual.grupoId, liderId: id },
       data: { liderId: null },
     });
-  if (cambiaRed && nuevaRed)
+  if (reclamaRed && redFinal)
     await db.red.update({
-      where: { id: nuevaRed },
+      where: { id: redFinal },
       data: { liderId: id },
     });
-  if (cambiaGrupo && nuevoGrupo)
+  if (reclamaGrupo && grupoFinal)
     await db.grupo.update({
-      where: { id: nuevoGrupo },
+      where: { id: grupoFinal },
       data: { liderId: id },
     });
 
@@ -249,9 +286,13 @@ export async function PUT(
         ? { passwordHash: await bcrypt.hash(datos.data.contrasena, 10) }
         : {}),
       ...(datos.data.redId !== undefined ? { redId: datos.data.redId } : {}),
+      ...(redIdFinal !== undefined && datos.data.redId === undefined
+        ? { redId: redIdFinal }
+        : {}),
       ...(datos.data.grupoId !== undefined
         ? { grupoId: datos.data.grupoId }
         : {}),
+      ...(cambiaRol ? { rol: rolFinal } : {}),
       ...(iglesiaIds
         ? {
             iglesias: {
