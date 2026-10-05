@@ -92,13 +92,12 @@ export async function PUT(
       where: {
         id: d.consolidadorId,
         activo: true,
-        rol: "CONSOLIDADOR",
+        rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         iglesias: { some: { iglesiaId } },
-        ...(grupoId ? { grupoId } : {}),
       },
-      select: { id: true },
+      select: { id: true, grupoId: true, redId: true },
     });
-    if (!c)
+    if (!c || (c.grupoId && grupoId && c.grupoId !== grupoId) || (c.redId && redId && c.redId !== redId))
       return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
   }
 

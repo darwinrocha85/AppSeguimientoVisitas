@@ -93,7 +93,7 @@ export async function GET(req: Request) {
       where: {
         id: qConso,
         activo: true,
-        rol: "CONSOLIDADOR",
+        rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         ...(propias
           ? { iglesias: { some: { iglesiaId: { in: propias } } } }
           : {}),

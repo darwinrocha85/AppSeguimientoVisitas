@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { I, Icono, TarjetaEstado } from "../ui";
 import { formatearTelefono } from "@/lib/telefono";
 
@@ -73,21 +74,77 @@ export function VistaConsolidador({
   lista,
   alertas,
   estadoInicial = null,
+  onCambio,
 }: {
   lista: VisitanteRaso[];
   alertas: { iglesiaId: string; estado: string; maxHoras: number }[];
   estadoInicial?: string | null;
+  onCambio?: () => void;
 }) {
+  const router = useRouter();
   const [filtro, setFiltro] = useState<"todos" | "pendientes" | "reportados">(
     "todos"
   );
   const [estado, setEstado] = useState<string | null>(estadoInicial);
+  const [reporteId, setReporteId] = useState<string | null>(null);
+  const [fechaContacto, setFechaContacto] = useState("");
+  const [obsReporte, setObsReporte] = useState("");
+  const [errorReporte, setErrorReporte] = useState("");
+  const [guardandoReporte, setGuardandoReporte] = useState(false);
   const esReportado = (v: VisitanteRaso) =>
     v.estadoActual === "SEGUNDO_CONTACTO" ||
     v.estadoActual === "VISITA_AMISTAD";
   /** Pendiente = venció su tiempo sin reportar. Al día = en tiempo. */
   const esPendiente = (v: VisitanteRaso) =>
     horasDesde(v.ultimoCambio) > limiteDe(v);
+
+  const SIGUIENTE: Record<string, { estado: string; etiqueta: string }> = {
+    DESEA_SER_CONTACTADO: { estado: "PRIMER_CONTACTO", etiqueta: "Primer contacto" },
+    PRIMER_CONTACTO: { estado: "SEGUNDO_CONTACTO", etiqueta: "Segundo contacto" },
+    SEGUNDO_CONTACTO: { estado: "VISITA_AMISTAD", etiqueta: "Visita de amistad" },
+    VISITA_AMISTAD: { estado: "VISITA_AMISTAD", etiqueta: "Otra visita de amistad" },
+  };
+
+  function ahoraLocal() {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function abrirReporte(v: VisitanteRaso) {
+    setReporteId(v.id);
+    setFechaContacto(ahoraLocal());
+    setObsReporte("");
+    setErrorReporte("");
+  }
+
+  async function guardarReporte() {
+    if (!reporteId) return;
+    const v = lista.find((x) => x.id === reporteId);
+    if (!v) return;
+    setErrorReporte("");
+    setGuardandoReporte(true);
+    const r = await fetch(`/api/visitantes/${reporteId}/reporte`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        aEstado: SIGUIENTE[v.estadoActual]?.estado ?? v.estadoActual,
+        fechaContacto: fechaContacto ? new Date(fechaContacto).toISOString() : null,
+        observaciones: obsReporte || null,
+      }),
+    });
+    setGuardandoReporte(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setErrorReporte(j?.error ?? "No se pudo guardar el reporte");
+      return;
+    }
+    setReporteId(null);
+    if (onCambio) onCambio();
+    else router.refresh();
+  }
+
+  const reporteDe = reporteId ? lista.find((x) => x.id === reporteId) ?? null : null;
 
   /** Estatus de la tarjeta: qué falta reportar (vencido) o qué va al día. */
   function estatus(v: VisitanteRaso): { texto: string; vencido: boolean } {
@@ -379,11 +436,15 @@ export function VistaConsolidador({
                   Coordinar visita
                 </button>
                 <button
-                  disabled
-                  title="Próximamente: llenar reporte"
-                  className="min-h-[44px] cursor-not-allowed rounded-xl bg-gold px-2 text-[12px] font-black tracking-wide text-white uppercase opacity-80"
+                  onClick={() => abrirReporte(v)}
+                  title={esReportado(v) ? "Reportar avance o visita" : "Confirmar el contacto con su fecha"}
+                  className="min-h-[44px] cursor-pointer rounded-xl bg-gold px-2 text-[12px] font-black tracking-wide text-white uppercase transition-all hover:brightness-95"
                 >
-                  {esReportado(v) ? "Editar reporte" : "Llenar reporte"}
+                  {v.estadoActual === "VISITA_AMISTAD"
+                    ? "Reportar visita"
+                    : esReportado(v)
+                      ? "Editar reporte"
+                      : "Llenar reporte"}
                 </button>
               </div>
               {vencido && (
@@ -402,6 +463,69 @@ export function VistaConsolidador({
         <p className="mt-3 rounded-2xl border border-dashed border-sand bg-white/60 px-6 py-8 text-center text-sm text-zinc-500">
           Nada aquí todavía.
         </p>
+      )}
+
+      {reporteDe && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Llenar reporte"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-navy/50 p-4 sm:items-center"
+          onClick={() => setReporteId(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-[15px] font-black text-navy">
+              Reporte: {reporteDe.nombre} {reporteDe.apellido}
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Avanza a{" "}
+              <strong>{SIGUIENTE[reporteDe.estadoActual]?.etiqueta}</strong>{" "}
+              con su fecha de contacto. Queda en el historial.
+            </p>
+            <label className="mt-3 block text-xs font-bold text-navy">
+              Fecha del contacto
+              <input
+                type="datetime-local"
+                className="mt-1 min-h-[44px] w-full rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none"
+                value={fechaContacto}
+                onChange={(e) => setFechaContacto(e.target.value)}
+                required
+              />
+            </label>
+            <label className="mt-2 block text-xs font-bold text-navy">
+              Observaciones del reporte
+              <input
+                className="mt-1 min-h-[44px] w-full rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none"
+                placeholder="Cómo fue el contacto…"
+                value={obsReporte}
+                onChange={(e) => setObsReporte(e.target.value)}
+              />
+            </label>
+            {errorReporte && (
+              <p role="alert" className="mt-2 text-sm font-semibold text-wine">
+                {errorReporte}
+              </p>
+            )}
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={guardarReporte}
+                disabled={guardandoReporte}
+                className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-gold px-4 text-sm font-black text-white uppercase disabled:opacity-60"
+              >
+                {guardandoReporte ? "Guardando…" : "Guardar reporte"}
+              </button>
+              <button
+                onClick={() => setReporteId(null)}
+                className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-4 text-sm font-bold text-navy"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

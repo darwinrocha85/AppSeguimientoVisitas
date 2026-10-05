@@ -120,7 +120,15 @@ export default function Admin() {
           <h1 className="text-xl font-bold text-navy">Crear usuario</h1>
           <p className="text-sm text-zinc-600">
             Pastor o líder consolidador, en al menos una iglesia (máximo dos).
+            Primero crea la iglesia en el Dashboard; después creas su pastor o
+            líder aquí y lo asignas.
           </p>
+          {iglesias.length === 0 && (
+            <p role="alert" className="mt-2 text-sm font-semibold text-wine">
+              Aún no hay iglesias: crea primero la iglesia en el Dashboard y
+              vuelve aquí a crear su pastor.
+            </p>
+          )}
         </header>
         {error && (
           <p role="alert" className="text-sm font-semibold text-wine">

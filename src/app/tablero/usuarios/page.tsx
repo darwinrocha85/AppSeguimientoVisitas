@@ -405,7 +405,7 @@ export default function Usuarios() {
             <p className="text-xs text-zinc-500">
               {esSuper
                 ? "Crear, editar y desactivar. Clic en el nombre para ver su perfil."
-                : "Crea y gestiona líderes y consolidadores de tu alcance."}
+                : "Primero crea la red y el grupo en la ficha de la iglesia; después creas aquí su líder o consolidador."}
             </p>
           </div>
         </div>

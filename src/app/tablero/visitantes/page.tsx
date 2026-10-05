@@ -36,7 +36,7 @@ type Visitante = {
 
 type Origen = { id: string; nombre: string };
 type Opcion = { id: string; nombre: string };
-type Raso = { id: string; nombre: string; apellido: string; grupoId: string | null };
+type Raso = { id: string; nombre: string; apellido: string; grupoId: string | null; redId?: string | null; rol?: string };
 
 const INSIGNIA_ESTADO: Record<string, { texto: string; clases: string }> = {
   DESEA_SER_CONTACTADO: {
@@ -130,6 +130,19 @@ function Contenido() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+
+  // Asignación explícita (pastor/líder consolidador): red/grupo/consolidador
+  // sin abrir el formulario completo. El estado se cambia con Reporte.
+  const [asignandoId, setAsignandoId] = useState<string | null>(null);
+  const [aRed, setARed] = useState("");
+  const [aGrupo, setAGrupo] = useState("");
+  const [aConso, setAConso] = useState("");
+  // Reporte de avance del gestor (misma regla que el consolidador).
+  const [reporteId, setReporteId] = useState<string | null>(null);
+  const [repFecha, setRepFecha] = useState("");
+  const [repObs, setRepObs] = useState("");
+  const [repError, setRepError] = useState("");
+  const [repGuardando, setRepGuardando] = useState(false);
 
   // Opciones del formulario (redes/grupos/rasos de la iglesia elegida).
   const [fRedes, setFRedes] = useState<Opcion[]>([]);
@@ -338,17 +351,110 @@ function Contenido() {
     else setError("No se pudo desactivar");
   }
 
-  const iglesia = iglesias.find((i) => i.id === iglesiaId);
-  // Cascada del formulario: con grupo, solo sus rasos; con red (sin grupo),
-  // solo los rasos de esa red; sin nada, todos los de la iglesia.
-  const rasosFiltrados = fRasos.filter((r) => {
-    if (form.grupoId) return r.grupoId === form.grupoId;
-    if (form.redId) {
-      const gruposDeLaRed = new Set(fGrupos.map((g) => g.id));
-      return r.grupoId !== null && gruposDeLaRed.has(r.grupoId);
+  const SIGUIENTE: Record<string, { estado: string; etiqueta: string }> = {
+    DESEA_SER_CONTACTADO: { estado: "PRIMER_CONTACTO", etiqueta: "Primer contacto" },
+    PRIMER_CONTACTO: { estado: "SEGUNDO_CONTACTO", etiqueta: "Segundo contacto" },
+    SEGUNDO_CONTACTO: { estado: "VISITA_AMISTAD", etiqueta: "Visita de amistad" },
+    VISITA_AMISTAD: { estado: "VISITA_AMISTAD", etiqueta: "Otra visita de amistad" },
+  };
+
+  function ahoraLocal() {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function abrirAsignar(v: Visitante) {
+    setAsignandoId(asignandoId === v.id ? null : v.id);
+    setEditandoId(null);
+    setReporteId(null);
+    setARed(v.redId ?? "");
+    setAGrupo(v.grupoId ?? "");
+    setAConso(v.consolidadorId ?? "");
+    setError("");
+    void cargarOpciones(v.iglesiaId, v.redId ?? "");
+  }
+
+  async function guardarAsignacion(id: string) {
+    setError("");
+    setGuardando(true);
+    const r = await fetch(`/api/visitantes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redId: aRed || null,
+        grupoId: aGrupo || null,
+        consolidadorId: aConso || null,
+      }),
+    });
+    setGuardando(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setError(j?.error ?? "No se pudo asignar");
+      return;
+    }
+    setAsignandoId(null);
+    await recargar();
+  }
+
+  function abrirReporte(v: Visitante) {
+    setReporteId(reporteId === v.id ? null : v.id);
+    setAsignandoId(null);
+    setEditandoId(null);
+    setRepFecha(ahoraLocal());
+    setRepObs("");
+    setRepError("");
+  }
+
+  async function guardarReporte(id: string) {
+    const v = lista.find((x) => x.id === id);
+    if (!v) return;
+    setRepError("");
+    setRepGuardando(true);
+    const r = await fetch(`/api/visitantes/${id}/reporte`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        aEstado: SIGUIENTE[v.estadoActual]?.estado ?? v.estadoActual,
+        fechaContacto: repFecha ? new Date(repFecha).toISOString() : null,
+        observaciones: repObs || null,
+      }),
+    });
+    setRepGuardando(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setRepError(j?.error ?? "No se pudo guardar el reporte");
+      return;
+    }
+    setReporteId(null);
+    await recargar();
+  }
+
+  // Opciones del panel Asignar: nivel iglesia (sin grupo) vale para todo.
+  const asignarRasos = fRasos.filter((r) => {
+    if (aGrupo) return r.grupoId === aGrupo || !r.grupoId;
+    if (aRed) {
+      const deLaRed = new Set(fGrupos.map((g) => g.id));
+      return (r.grupoId !== null && deLaRed.has(r.grupoId)) || !r.grupoId;
     }
     return true;
   });
+
+  const iglesia = iglesias.find((i) => i.id === iglesiaId);
+  // Cascada del formulario: con grupo, sus rasos más nivel iglesia (líder
+  // consolidador, sin grupo) que puede consolidar ahí con la misma cuenta;
+  // con red (sin grupo), los de esa red más nivel iglesia; sin nada, todos.
+  const rasosFiltrados = fRasos.filter((r) => {
+    const nivelIglesia = !r.grupoId;
+    if (form.grupoId) return r.grupoId === form.grupoId || nivelIglesia;
+    if (form.redId) {
+      const gruposDeLaRed = new Set(fGrupos.map((g) => g.id));
+      return (r.grupoId !== null && gruposDeLaRed.has(r.grupoId)) || nivelIglesia;
+    }
+    return true;
+  });
+  const etiquetaRol = (rol?: string) =>
+    rol === "LIDER_RED" ? " · líder red" : rol === "LIDER_GRUPO" ? " · líder grupo" : rol === "LIDER_CONSOLIDADOR" ? " · líder consolidador" : "";
 
   function bloqueForm(esEdicion: boolean, id?: string) {
     return (
@@ -391,7 +497,7 @@ function Contenido() {
         <select aria-label="Consolidador" className={`${campo} cursor-pointer`} value={form.consolidadorId} onChange={(e) => setF("consolidadorId", e.target.value)}>
           <option value="">Consolidador…</option>
           {rasosFiltrados.map((r) => (
-            <option key={r.id} value={r.id}>{r.nombre} {r.apellido}</option>
+            <option key={r.id} value={r.id}>{r.nombre} {r.apellido}{etiquetaRol(r.rol)}</option>
           ))}
         </select>
         <input aria-label="Peticiones de oración" className={`${campo} md:col-span-2`} placeholder="Peticiones de oración" value={form.peticiones} onChange={(e) => setF("peticiones", e.target.value)} />
@@ -431,6 +537,7 @@ function Contenido() {
         lista={lista}
         alertas={resumen?.alertas ?? []}
         estadoInicial={estadoFiltro}
+        onCambio={recargar}
       />
     );
   }
@@ -486,7 +593,7 @@ function Contenido() {
             </h2>
             <p className="text-xs text-zinc-500">
               {soloSinAsignar
-                ? "Solo iglesia por asignar o 1er contacto sin consolidador · Reasigna con Editar"
+                ? "Solo iglesia por asignar o 1er contacto sin consolidador · Reasigna con Asignar"
                 : `Iglesia: ${iglesia ? iglesia.nombre : "Todas"}`}
             </p>
           </div>
@@ -641,7 +748,19 @@ function Contenido() {
                         {new Date(v.fechaRegistro).toLocaleDateString("es-ES")}
                       </span>
                       {esGestorUi && (
-                        <span className="flex gap-1">
+                        <span className="flex flex-wrap gap-1">
+                          <button
+                            onClick={() => abrirAsignar(v)}
+                            className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                          >
+                            {asignandoId === v.id ? "Cerrar" : "Asignar"}
+                          </button>
+                          <button
+                            onClick={() => abrirReporte(v)}
+                            className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                          >
+                            {reporteId === v.id ? "Cerrar" : "Reporte"}
+                          </button>
                           <button
                             onClick={() =>
                               editandoId === v.id
@@ -663,6 +782,90 @@ function Contenido() {
                     </span>
                   </div>
                   {esGestorUi && editandoId === v.id && bloqueForm(true, v.id)}
+                  {esGestorUi && asignandoId === v.id && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-white p-3 md:grid-cols-4">
+                      <p className="text-xs font-bold text-navy md:col-span-4">
+                        Asignar a {v.nombre} {v.apellido} ·{" "}
+                        <span className="font-medium text-zinc-500">
+                          red, grupo y quién lo consolida (líderes incluidos)
+                        </span>
+                      </p>
+                      <select aria-label="Red asignada" className={`${campo} cursor-pointer`} value={aRed} onChange={(e) => { setARed(e.target.value); setAGrupo(""); setAConso(""); void cargarOpciones(v.iglesiaId, e.target.value); }}>
+                        <option value="">Red…</option>
+                        {fRedes.map((r) => (
+                          <option key={r.id} value={r.id}>{r.nombre}</option>
+                        ))}
+                      </select>
+                      <select aria-label="Grupo asignado" className={`${campo} cursor-pointer`} value={aGrupo} onChange={(e) => { setAGrupo(e.target.value); setAConso(""); }}>
+                        <option value="">Grupo…</option>
+                        {fGrupos.map((g) => (
+                          <option key={g.id} value={g.id}>{g.nombre}</option>
+                        ))}
+                      </select>
+                      <select aria-label="Consolidador asignado" className={`${campo} cursor-pointer`} value={aConso} onChange={(e) => setAConso(e.target.value)}>
+                        <option value="">Consolidador…</option>
+                        {asignarRasos.map((r) => (
+                          <option key={r.id} value={r.id}>{r.nombre} {r.apellido}{etiquetaRol(r.rol)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => guardarAsignacion(v.id)}
+                        disabled={guardando}
+                        className="min-h-[44px] cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase disabled:opacity-60"
+                      >
+                        {guardando ? "Guardando…" : "Guardar"}
+                      </button>
+                      {error && (
+                        <p role="alert" className="text-sm font-semibold text-wine md:col-span-4">
+                          {error}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {esGestorUi && reporteId === v.id && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-white p-3 md:grid-cols-3">
+                      <p className="text-xs font-bold text-navy md:col-span-3">
+                        Reporte: avanza a{" "}
+                        {SIGUIENTE[v.estadoActual]?.etiqueta} con su fecha de
+                        contacto. Queda en el historial.
+                      </p>
+                      <input
+                        aria-label="Fecha del contacto"
+                        type="datetime-local"
+                        className={campo}
+                        value={repFecha}
+                        onChange={(e) => setRepFecha(e.target.value)}
+                        required
+                      />
+                      <input
+                        aria-label="Observaciones del reporte"
+                        className={`${campo} md:col-span-2`}
+                        placeholder="Cómo fue el contacto…"
+                        value={repObs}
+                        onChange={(e) => setRepObs(e.target.value)}
+                      />
+                      <div className="flex gap-2 md:col-span-3">
+                        <button
+                          onClick={() => guardarReporte(v.id)}
+                          disabled={repGuardando}
+                          className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-gold px-4 text-sm font-black text-white uppercase disabled:opacity-60"
+                        >
+                          {repGuardando ? "Guardando…" : "Guardar reporte"}
+                        </button>
+                        <button
+                          onClick={() => setReporteId(null)}
+                          className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-4 text-sm font-bold text-navy"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      {repError && (
+                        <p role="alert" className="text-sm font-semibold text-wine md:col-span-3">
+                          {repError}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}

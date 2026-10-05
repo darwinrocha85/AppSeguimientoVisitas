@@ -50,6 +50,19 @@ export const NECESITA_ASIGNACION: Prisma.VisitanteWhereInput = {
   ],
 };
 
+/**
+ * Roles que pueden recibir visitantes asignados (ejercer consolidación)
+ * sin duplicar su cuenta: el raso consolida en su grupo, y los líderes
+ * pueden consolidar visitantes de su alcance (misma iglesia; si tienen
+ * red/grupo fijados, deben coincidir con los del visitante).
+ */
+export const ROLES_QUE_CONSOLIDAN = [
+  "CONSOLIDADOR",
+  "LIDER_RED",
+  "LIDER_GRUPO",
+  "LIDER_CONSOLIDADOR",
+] as const;
+
 /** Roles que ven el tab de no asignados (superadmin ve todo). */
 export function veNoAsignados(s: Sesion | null) {
   return (
@@ -174,9 +187,10 @@ export async function validarRedGrupo(
 }
 
 /**
- * Valida el filtro de consolidador raso (cascada del grupo).
+ * Valida el filtro de consolidador (cascada del grupo): rasos y líderes
+ * que consolidan (ROLES_QUE_CONSOLIDAN), sin duplicar cuenta.
  * El consolidador siempre se ve a sí mismo. Un id fuera de alcance
- * (otra iglesia/grupo o no raso) se ignora sin ampliar nada.
+ * (otra iglesia/grupo o rol que no consolida) se ignora sin ampliar nada.
  */
 export async function validarConsolidador(
   s: Sesion,
@@ -191,11 +205,17 @@ export async function validarConsolidador(
     select: {
       id: true,
       rol: true,
+      activo: true,
       grupoId: true,
       iglesias: { select: { iglesiaId: true } },
     },
   });
-  if (!c || c.rol !== "CONSOLIDADOR") return undefined;
+  if (
+    !c ||
+    !c.activo ||
+    !(ROLES_QUE_CONSOLIDAN as readonly string[]).includes(c.rol)
+  )
+    return undefined;
   const enAlcance =
     s.rol === "SUPERADMIN" ||
     c.iglesias.some((x) => iglesiaIds.includes(x.iglesiaId));

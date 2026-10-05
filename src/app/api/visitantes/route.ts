@@ -231,13 +231,15 @@ export async function POST(req: Request) {
       where: {
         id: d.consolidadorId,
         activo: true,
-        rol: "CONSOLIDADOR",
+        rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         iglesias: { some: { iglesiaId: d.iglesiaId } },
-        ...(d.grupoId ? { grupoId: d.grupoId } : {}),
       },
-      select: { id: true },
+      select: { id: true, grupoId: true, redId: true },
     });
-    if (!c)
+    // Nivel iglesia (sin red/grupo, p. ej. líder consolidador) puede
+    // consolidar cualquier grupo de su iglesia; con red/grupo fijados,
+    // deben coincidir con los del visitante.
+    if (!c || (c.grupoId && d.grupoId && c.grupoId !== d.grupoId) || (c.redId && d.redId && c.redId !== d.redId))
       return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
   }
 

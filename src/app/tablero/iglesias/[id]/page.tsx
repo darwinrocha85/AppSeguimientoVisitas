@@ -11,7 +11,7 @@ import {
   useTablero,
   type Rol,
 } from "../../ui";
-import { formatearTelefono } from "@/lib/telefono";
+import { formatearTelefono, soloDigitos } from "@/lib/telefono";
 
 type Asignado = {
   id: string;
@@ -157,6 +157,19 @@ export default function DetalleIglesia() {
     { tipo: "red" | "grupo"; id: string } | null
   >(null);
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
+  // Crear líder aquí mismo (nivel primero, líder después): la red o el
+  // grupo ya existe; el formulario lo crea y lo deja liderando.
+  const [creandoLider, setCreandoLider] = useState<
+    { tipo: "red" | "grupo"; id: string } | null
+  >(null);
+  const [liderForm, setLiderForm] = useState({
+    usuario: "",
+    contrasena: "",
+    nombre: "",
+    apellido: "",
+    telefono: "",
+  });
+  const [guardandoLider, setGuardandoLider] = useState(false);
   const [errorOrg, setErrorOrg] = useState("");
 
   async function cargarOrg() {
@@ -273,6 +286,124 @@ export default function DetalleIglesia() {
     await cargarOrg();
   }
 
+  function abrirCrearLider(tipo: "red" | "grupo", id: string) {
+    setCreandoLider(creandoLider?.id === id ? null : { tipo, id });
+    setAsignando(null);
+    setErrorOrg("");
+    setLiderForm({ usuario: "", contrasena: "", nombre: "", apellido: "", telefono: "" });
+  }
+
+  async function crearLiderAqui(e: React.FormEvent) {
+    e.preventDefault();
+    if (!creandoLider) return;
+    const redId =
+      creandoLider.tipo === "red"
+        ? creandoLider.id
+        : (grupos.find((g) => g.id === creandoLider.id)?.redId ?? "");
+    if (creandoLider.tipo === "grupo" && !redId) {
+      setErrorOrg("Grupo inválido");
+      return;
+    }
+    setErrorOrg("");
+    setGuardandoLider(true);
+    const r = await fetch("/api/usuarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usuario: liderForm.usuario,
+        contrasena: liderForm.contrasena,
+        nombre: liderForm.nombre,
+        apellido: liderForm.apellido,
+        telefono: liderForm.telefono || undefined,
+        rol: creandoLider.tipo === "red" ? "LIDER_RED" : "LIDER_GRUPO",
+        iglesiaIds: [params.id],
+        redId,
+        ...(creandoLider.tipo === "grupo" ? { grupoId: creandoLider.id } : {}),
+      }),
+    });
+    setGuardandoLider(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setErrorOrg(j?.error ?? "No se pudo crear el líder");
+      return;
+    }
+    setCreandoLider(null);
+    await cargarOrg();
+  }
+
+  function bloqueCrearLider(etiqueta: string) {
+    return (
+      <form
+        onSubmit={crearLiderAqui}
+        className="mt-2 grid grid-cols-1 gap-2 rounded-xl border border-sand bg-white p-3 md:grid-cols-3"
+      >
+        <p className="text-xs font-bold text-navy md:col-span-3">
+          Crear {etiqueta} aquí (queda liderando este nivel)
+        </p>
+        <input
+          aria-label="Usuario login"
+          className="min-h-[44px] rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none"
+          placeholder="Usuario login"
+          value={liderForm.usuario}
+          onChange={(e) => setLiderForm({ ...liderForm, usuario: e.target.value })}
+          required
+          minLength={3}
+        />
+        <input
+          aria-label="Contraseña"
+          className="min-h-[44px] rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none"
+          placeholder="Contraseña (min 6)"
+          type="password"
+          value={liderForm.contrasena}
+          onChange={(e) => setLiderForm({ ...liderForm, contrasena: e.target.value })}
+          required
+          minLength={6}
+          autoComplete="new-password"
+        />
+        <input
+          aria-label="Teléfono"
+          className="min-h-[44px] rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none"
+          placeholder="Teléfono (607 35 00 44)*"
+          inputMode="numeric"
+          value={formatearTelefono(liderForm.telefono)}
+          onChange={(e) => setLiderForm({ ...liderForm, telefono: soloDigitos(e.target.value) })}
+          required
+        />
+        <input
+          aria-label="Nombre"
+          className="min-h-[44px] rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none"
+          placeholder="Nombre"
+          value={liderForm.nombre}
+          onChange={(e) => setLiderForm({ ...liderForm, nombre: e.target.value })}
+          required
+        />
+        <input
+          aria-label="Apellido"
+          className="min-h-[44px] rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none"
+          placeholder="Apellido"
+          value={liderForm.apellido}
+          onChange={(e) => setLiderForm({ ...liderForm, apellido: e.target.value })}
+          required
+        />
+        <div className="flex gap-2">
+          <button
+            disabled={guardandoLider}
+            className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-navy px-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            {guardandoLider ? "Creando…" : "Crear líder"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreandoLider(null)}
+            className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-3 text-sm font-bold text-navy"
+          >
+            Cerrar
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   if (cargando) {
     return <p className="text-sm font-semibold text-navy">Cargando iglesia…</p>;
   }
@@ -323,7 +454,7 @@ export default function DetalleIglesia() {
               </h2>
               <p className="text-xs text-zinc-500">
                 {puedeGestionar
-                  ? "Crea, renombra y asigna líderes."
+                  ? "Primero crea la red o el grupo; después crea o asigna su líder aquí."
                   : "Solo lectura para tu rol."}
               </p>
             </div>
@@ -412,6 +543,14 @@ export default function DetalleIglesia() {
                           >
                             Líder
                           </button>
+                          {!r.lider && (
+                            <button
+                              onClick={() => abrirCrearLider("red", r.id)}
+                              className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                            >
+                              Crear líder
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setNuevoGrupoEn(
@@ -432,7 +571,8 @@ export default function DetalleIglesia() {
                   <div className="mt-2 rounded-xl border border-sand bg-white p-2">
                     {candidatos.length === 0 ? (
                       <p className="px-2 py-1 text-xs text-zinc-500">
-                        No hay líderes de red disponibles (créalo en Usuarios).
+                        No hay líderes de red creados (créalo aquí abajo o en
+                        Usuarios).
                       </p>
                     ) : (
                       <ul className="max-h-36 overflow-auto">
@@ -450,6 +590,7 @@ export default function DetalleIglesia() {
                     )}
                   </div>
                 )}
+                {puedeGestionar && !r.lider && creandoLider?.tipo === "red" && creandoLider.id === r.id && bloqueCrearLider("al líder de esta red")}
                 {nuevoGrupoEn === r.id && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <input
@@ -525,6 +666,14 @@ export default function DetalleIglesia() {
                                 >
                                   Líder
                                 </button>
+                                {!g.lider && (
+                                  <button
+                                    onClick={() => abrirCrearLider("grupo", g.id)}
+                                    className="cursor-pointer text-[12px] font-bold text-navy/70 hover:underline"
+                                  >
+                                    Crear líder
+                                  </button>
+                                )}
                               </span>
                             )}
                           </>
@@ -533,8 +682,8 @@ export default function DetalleIglesia() {
                           <div className="mt-1 w-full rounded-xl border border-sand bg-paper p-2">
                             {candidatos.length === 0 ? (
                               <p className="px-2 py-1 text-xs text-zinc-500">
-                                No hay líderes de grupo disponibles (créalo en
-                                Usuarios).
+                                Sin líderes creados (créalo aquí abajo o en
+                                Usuarios; vale líder de red de esta red).
                               </p>
                             ) : (
                               <ul className="max-h-36 overflow-auto">
@@ -550,6 +699,11 @@ export default function DetalleIglesia() {
                                 ))}
                               </ul>
                             )}
+                          </div>
+                        )}
+                        {puedeGestionar && !g.lider && creandoLider?.tipo === "grupo" && creandoLider.id === g.id && (
+                          <div className="w-full">
+                            {bloqueCrearLider("al líder de este grupo")}
                           </div>
                         )}
                       </li>

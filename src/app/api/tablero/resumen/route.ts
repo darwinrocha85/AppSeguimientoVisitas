@@ -138,17 +138,18 @@ export async function GET(req: Request) {
           select: { iglesiaId: true, estado: true, maxHoras: true },
         })
       : [];
-  // Consolidadores rasos del alcance para el 4º dropdown en cascada.
+  // Consolidadores del alcance para el 4º dropdown en cascada: rasos y
+  // líderes que consolidan con la misma cuenta (sin duplicarla).
   const rasos =
     s.rol === "CONSOLIDADOR"
       ? []
       : await db.usuario.findMany({
           where: {
-            rol: "CONSOLIDADOR",
+            rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
             activo: true,
             iglesias: { some: { iglesiaId: { in: ids } } },
           },
-          select: { id: true, nombre: true, apellido: true, grupoId: true },
+          select: { id: true, nombre: true, apellido: true, grupoId: true, rol: true },
           orderBy: { nombre: "asc" },
         });
 

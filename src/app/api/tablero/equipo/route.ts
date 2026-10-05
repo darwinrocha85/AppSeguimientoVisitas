@@ -114,7 +114,7 @@ export async function GET(req: Request) {
     let liderGrupo: Persona | null = null;
     if (miGrupo) {
       const lg = await db.usuario.findFirst({
-        where: { ...BASE, rol: "LIDER_GRUPO", grupoId: miGrupo },
+        where: { ...BASE, rol: { in: ["LIDER_GRUPO", "LIDER_RED"] }, grupoId: miGrupo },
         select: { ...CORTO },
       });
       if (lg) {
@@ -129,8 +129,9 @@ export async function GET(req: Request) {
   }
 
   if (s.rol === "LIDER_GRUPO" && miGrupo) {
+    // Quienes consolidan en el grupo (misma cuenta, sin duplicarla).
     equipo.consolidadores = await varios(
-      ["CONSOLIDADOR"],
+      ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"],
       { grupoId: miGrupo },
       "Tu consolidador"
     );
@@ -148,7 +149,7 @@ export async function GET(req: Request) {
     const detalle: Record<string, Persona[]> = {};
     for (const g of grupos) {
       detalle[g.id] = await varios(
-        ["LIDER_GRUPO", "CONSOLIDADOR"],
+        ["LIDER_RED", "LIDER_GRUPO", "CONSOLIDADOR"],
         { grupoId: g.id },
         g.nombre
       );
@@ -224,13 +225,14 @@ async function equipoDeIglesia(
   const personas = await db.usuario.findMany({
     where: {
       ...BASE,
-      rol: { in: ["LIDER_GRUPO", "CONSOLIDADOR"] },
+      rol: { in: ["LIDER_RED", "LIDER_GRUPO", "CONSOLIDADOR"] },
       ...enIglesia,
     },
     select: { ...CORTO, grupoId: true },
     orderBy: { nombre: "asc" },
   });
   const etiqueta: Record<string, string> = {
+    LIDER_RED: "Líder de red",
     LIDER_GRUPO: "Líder de grupo",
     CONSOLIDADOR: "Consolidador",
   };

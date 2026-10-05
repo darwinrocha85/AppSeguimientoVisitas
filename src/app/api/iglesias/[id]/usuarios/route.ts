@@ -57,12 +57,12 @@ export async function GET(
       where: {
         id: qConso,
         activo: true,
-        rol: "CONSOLIDADOR",
+        rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         iglesias: { some: { iglesiaId: id } },
       },
       select: { id: true, grupoId: true },
     });
-    if (c && (!grupoId || c.grupoId === grupoId)) consoId = c.id;
+    if (c && (!grupoId || !c.grupoId || c.grupoId === grupoId)) consoId = c.id;
   }
 
   const asignados = await db.usuarioIglesia.findMany({
