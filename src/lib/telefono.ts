@@ -14,3 +14,18 @@ export function formatearTelefono(
 
 export const TELEFONO_REGEX = /^\d{9}$/;
 export const TELEFONO_AYUDA = "Teléfono: 9 dígitos (p. ej. 607 35 00 44)";
+
+/** Prefijo España: wa.me exige código de país y aquí se guardan 9 dígitos. */
+export const WHATSAPP_PREFIJO = "34";
+
+export function enlaceLlamar(valor: string | null | undefined): string | null {
+  const d = (valor ?? "").replace(/\D/g, "");
+  return d ? `tel:${d}` : null;
+}
+
+export function enlaceWhatsApp(
+  valor: string | null | undefined
+): string | null {
+  const d = (valor ?? "").replace(/\D/g, "");
+  return d ? `https://wa.me/${WHATSAPP_PREFIJO}${d}` : null;
+}

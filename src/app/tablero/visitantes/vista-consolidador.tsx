@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { I, Icono, TarjetaEstado } from "../ui";
-import { formatearTelefono } from "@/lib/telefono";
+import { formatearTelefono, enlaceLlamar, enlaceWhatsApp } from "@/lib/telefono";
 
 export type VisitanteRaso = {
   id: string;
@@ -63,10 +63,6 @@ function horasDesde(iso: string) {
     0,
     Math.floor((Date.now() - new Date(iso).getTime()) / 3600000)
   );
-}
-
-function digitos(tel: string | null) {
-  return (tel ?? "").replace(/\D/g, "");
 }
 
 /** Vista del consolidador según images_test/view_consolidador.png */
@@ -356,7 +352,6 @@ export function VistaConsolidador({
           const limite = limiteDe(v);
           const vencido = hs > limite;
           const est = estatus(v);
-          const tel = digitos(v.telefono);
           return (
             <article
               key={v.id}
@@ -401,9 +396,9 @@ export function VistaConsolidador({
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {tel ? (
+                {enlaceLlamar(v.telefono) ? (
                   <a
-                    href={`tel:${tel}`}
+                    href={enlaceLlamar(v.telefono) as string}
                     className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-sand bg-white text-[12px] font-black tracking-wide text-navy uppercase transition-all hover:bg-paper"
                   >
                     <Icono className="h-4 w-4">{I.telefono}</Icono>
@@ -414,9 +409,9 @@ export function VistaConsolidador({
                     Sin teléfono
                   </span>
                 )}
-                {tel ? (
+                {enlaceWhatsApp(v.telefono) ? (
                   <a
-                    href={`https://wa.me/${tel}`}
+                    href={enlaceWhatsApp(v.telefono) as string}
                     target="_blank"
                     rel="noreferrer"
                     className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-sand bg-white text-[12px] font-black tracking-wide text-navy uppercase transition-all hover:bg-paper"

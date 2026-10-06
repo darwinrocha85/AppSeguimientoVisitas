@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ETIQUETA_ROL, I, Icono, Vacio, useTablero } from "../ui";
-import { formatearTelefono, soloDigitos } from "@/lib/telefono";
+import { formatearTelefono, soloDigitos, enlaceLlamar, enlaceWhatsApp } from "@/lib/telefono";
 import { VistaConsolidador } from "./vista-consolidador";
 
 type Visitante = {
@@ -527,33 +527,32 @@ function Contenido() {
     await recargar();
   }
 
-  // Opciones del panel Asignar en cascada: red → grupo (solo de esa
-  // red) → consolidador (solo de ese grupo). Nivel iglesia (sin grupo)
-  // vale en cualquier grupo.
+  // Cascada del panel Asignar: red → grupo (solo de esa red) →
+  // consolidador (solo de ese grupo).
   const gruposAsignar = aRed
     ? (fGrupos as (Opcion & { redId: string })[]).filter(
         (g) => g.redId === aRed
       )
     : [];
+  // Nivel iglesia (sin grupo) solo sin filtro: con red o grupo elegidos
+  // se oculta del desplegable.
   const asignarRasos = fRasos.filter((r) => {
-    if (aGrupo) return r.grupoId === aGrupo || !r.grupoId;
+    if (aGrupo) return r.grupoId === aGrupo;
     if (aRed) {
       const deLaRed = new Set(gruposAsignar.map((g) => g.id));
-      return (r.grupoId !== null && deLaRed.has(r.grupoId)) || !r.grupoId;
+      return r.grupoId !== null && deLaRed.has(r.grupoId);
     }
     return true;
   });
 
   const iglesia = iglesias.find((i) => i.id === iglesiaId);
-  // Cascada del formulario: con grupo, sus rasos más nivel iglesia (líder
-  // consolidador, sin grupo) que puede consolidar ahí con la misma cuenta;
-  // con red (sin grupo), los de esa red más nivel iglesia; sin nada, todos.
+  // Cascada del formulario: con grupo, solo sus rasos; con red (sin
+  // grupo), solo los de esa red. Nivel iglesia solo sin filtro.
   const rasosFiltrados = fRasos.filter((r) => {
-    const nivelIglesia = !r.grupoId;
-    if (form.grupoId) return r.grupoId === form.grupoId || nivelIglesia;
+    if (form.grupoId) return r.grupoId === form.grupoId;
     if (form.redId) {
       const gruposDeLaRed = new Set(fGrupos.map((g) => g.id));
-      return (r.grupoId !== null && gruposDeLaRed.has(r.grupoId)) || nivelIglesia;
+      return r.grupoId !== null && gruposDeLaRed.has(r.grupoId);
     }
     return true;
   });
@@ -856,6 +855,28 @@ function Contenido() {
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
+                      {v.telefono && (
+                        <>
+                          <a
+                            href={enlaceLlamar(v.telefono) ?? "#"}
+                            title={`Llamar a ${v.nombre} ${v.apellido}`}
+                            aria-label={`Llamar a ${v.nombre} ${v.apellido}`}
+                            className="flex min-h-[40px] min-w-[40px] cursor-pointer items-center justify-center rounded-lg border border-sand bg-white text-navy transition-all duration-200 hover:border-navy/30"
+                          >
+                            <Icono className="h-4 w-4">{I.telefono}</Icono>
+                          </a>
+                          <a
+                            href={enlaceWhatsApp(v.telefono) ?? "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`WhatsApp a ${v.nombre} ${v.apellido}`}
+                            aria-label={`WhatsApp a ${v.nombre} ${v.apellido}`}
+                            className="flex min-h-[40px] min-w-[40px] cursor-pointer items-center justify-center rounded-lg border border-sand bg-white text-[#1F7A4B] transition-all duration-200 hover:border-[#1F7A4B]/40"
+                          >
+                            <Icono className="h-4 w-4">{I.whatsapp}</Icono>
+                          </a>
+                        </>
+                      )}
                       <span className="rounded-full border border-sand bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600">
                         {new Date(v.fechaRegistro).toLocaleDateString("es-ES")}
                       </span>
@@ -1162,21 +1183,37 @@ function VistaLiderGrupo({
                       <span className="rounded-full border border-sand bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600">
                         {v.telefono ? formatearTelefono(v.telefono) : "—"}
                       </span>
-                      <button
-                        disabled
-                        title="Próximamente"
-                        className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase"
-                      >
-                        <Icono className="h-4 w-4">{I.telefono}</Icono>
-                        Llamar
-                      </button>
-                      <button
-                        disabled
-                        title="Próximamente"
-                        className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase"
-                      >
-                        WhatsApp
-                      </button>
+                      {enlaceLlamar(v.telefono) ? (
+                        <a
+                          href={enlaceLlamar(v.telefono) as string}
+                          title={`Llamar a ${v.nombre} ${v.apellido}`}
+                          className="flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-sand bg-white px-3 text-[12px] font-black tracking-wide text-navy uppercase transition-all duration-200 hover:border-navy/30"
+                        >
+                          <Icono className="h-4 w-4">{I.telefono}</Icono>
+                          Llamar
+                        </a>
+                      ) : (
+                        <span className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase">
+                          <Icono className="h-4 w-4">{I.telefono}</Icono>
+                          Llamar
+                        </span>
+                      )}
+                      {enlaceWhatsApp(v.telefono) ? (
+                        <a
+                          href={enlaceWhatsApp(v.telefono) as string}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`WhatsApp a ${v.nombre} ${v.apellido}`}
+                          className="flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-sand bg-white px-3 text-[12px] font-black tracking-wide text-[#1F7A4B] uppercase transition-all duration-200 hover:border-[#1F7A4B]/40"
+                        >
+                          <Icono className="h-4 w-4">{I.whatsapp}</Icono>
+                          WhatsApp
+                        </a>
+                      ) : (
+                        <span className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase">
+                          WhatsApp
+                        </span>
+                      )}
                     </span>
                   </div>
                   {vencido && (
