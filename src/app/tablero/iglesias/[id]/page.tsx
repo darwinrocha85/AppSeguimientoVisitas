@@ -168,6 +168,7 @@ export default function DetalleIglesia() {
     nombre: "",
     apellido: "",
     telefono: "",
+    grupoId: "",
   });
   const [guardandoLider, setGuardandoLider] = useState(false);
   const [errorOrg, setErrorOrg] = useState("");
@@ -290,7 +291,7 @@ export default function DetalleIglesia() {
     setCreandoLider(creandoLider?.id === id ? null : { tipo, id });
     setAsignando(null);
     setErrorOrg("");
-    setLiderForm({ usuario: "", contrasena: "", nombre: "", apellido: "", telefono: "" });
+    setLiderForm({ usuario: "", contrasena: "", nombre: "", apellido: "", telefono: "", grupoId: "" });
   }
 
   async function crearLiderAqui(e: React.FormEvent) {
@@ -302,6 +303,14 @@ export default function DetalleIglesia() {
         : (grupos.find((g) => g.id === creandoLider.id)?.redId ?? "");
     if (creandoLider.tipo === "grupo" && !redId) {
       setErrorOrg("Grupo inválido");
+      return;
+    }
+    // Triple función con la misma cuenta: el líder de red puede liderar
+    // también un grupo de su red (y luego recibir visitantes asignados).
+    const grupoExtra =
+      creandoLider.tipo === "red" ? liderForm.grupoId || undefined : undefined;
+    if (grupoExtra && !grupos.some((g) => g.id === grupoExtra && g.redId === redId && !g.lider)) {
+      setErrorOrg("Ese grupo no está libre en esta red");
       return;
     }
     setErrorOrg("");
@@ -319,6 +328,7 @@ export default function DetalleIglesia() {
         iglesiaIds: [params.id],
         redId,
         ...(creandoLider.tipo === "grupo" ? { grupoId: creandoLider.id } : {}),
+        ...(grupoExtra ? { grupoId: grupoExtra } : {}),
       }),
     });
     setGuardandoLider(false);
@@ -331,7 +341,10 @@ export default function DetalleIglesia() {
     await cargarOrg();
   }
 
-  function bloqueCrearLider(etiqueta: string) {
+  function bloqueCrearLider(etiqueta: string, redIdParaGrupos?: string) {
+    const gruposLibres = redIdParaGrupos
+      ? grupos.filter((g) => g.redId === redIdParaGrupos && !g.lider)
+      : [];
     return (
       <form
         onSubmit={crearLiderAqui}
@@ -385,6 +398,26 @@ export default function DetalleIglesia() {
           onChange={(e) => setLiderForm({ ...liderForm, apellido: e.target.value })}
           required
         />
+        {redIdParaGrupos && (
+          <select
+            aria-label="Grupo que también lidera (opcional)"
+            className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-paper px-3 text-sm text-navy outline-none md:col-span-2"
+            value={liderForm.grupoId}
+            disabled={gruposLibres.length === 0}
+            title={gruposLibres.length === 0 ? "Esta red no tiene grupos libres" : "El mismo líder de red lidera también ese grupo"}
+            onChange={(e) => setLiderForm({ ...liderForm, grupoId: e.target.value })}
+          >
+            <option value="">También lidera el grupo… (opcional)</option>
+            {gruposLibres.map((g) => (
+              <option key={g.id} value={g.id}>{g.nombre}</option>
+            ))}
+          </select>
+        )}
+        {redIdParaGrupos && (
+          <p className="text-xs text-zinc-500 md:col-span-3">
+            Con la misma cuenta puede liderar red y grupo; después se le asignan visitantes en Visitantes → Asignar.
+          </p>
+        )}
         <div className="flex gap-2">
           <button
             disabled={guardandoLider}
@@ -590,7 +623,7 @@ export default function DetalleIglesia() {
                     )}
                   </div>
                 )}
-                {puedeGestionar && !r.lider && creandoLider?.tipo === "red" && creandoLider.id === r.id && bloqueCrearLider("al líder de esta red")}
+                {puedeGestionar && !r.lider && creandoLider?.tipo === "red" && creandoLider.id === r.id && bloqueCrearLider("al líder de esta red", r.id)}
                 {nuevoGrupoEn === r.id && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <input

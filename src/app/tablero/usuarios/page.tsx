@@ -509,6 +509,9 @@ export default function Usuarios() {
                         ))}
                       </select>
                     )}
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Con la misma cuenta lidera red y grupo; para que también consolide, asígnale visitantes en Visitantes → Asignar.
+                    </p>
                   </div>
                 ) : null
               ) : (
@@ -740,6 +743,11 @@ export default function Usuarios() {
                           <option key={g.id} value={g.id}>{g.nombre}</option>
                         ))}
                       </select>
+                      {(editRol === "LIDER_RED" || editRol === "LIDER_GRUPO") && (
+                        <p className="text-xs text-zinc-500 md:col-span-1">
+                          También puede consolidar: asígnale visitantes en Visitantes → Asignar.
+                        </p>
+                      )}
                     </>
                   )}
                   <div className="flex items-end gap-2">
