@@ -162,6 +162,8 @@ function Contenido() {
     if (soloSinAsignar) {
       qs.set("sinAsignar", "1");
     } else {
+      // El tab Todos une asignados y no asignados.
+      if (tab === "todos") qs.set("todos", "1");
       if (red !== "todas") qs.set("redId", red);
       if (grupo !== "todos") qs.set("grupoId", grupo);
       if (consolidador !== "todos") qs.set("consolidadorId", consolidador);
@@ -686,8 +688,13 @@ function Contenido() {
   const etiquetaFiltro = estadoFiltro
     ? (INSIGNIA_ESTADO[estadoFiltro]?.texto ?? estadoFiltro)
     : null;
-  const alDia = lista.filter((v) => !esPendiente(v)).length;
-  const pendientes = lista.length - alDia;
+  // El tab Todos une asignados y no asignados; los contadores al
+  // día/pendientes siguen sobre asignados (como las tarjetas).
+  const asignados = lista.filter(
+    (v) => v.redId || v.grupoId || v.consolidadorId
+  );
+  const alDia = asignados.filter((v) => !esPendiente(v)).length;
+  const pendientes = asignados.length - alDia;
 
   return (
     <>
@@ -828,11 +835,17 @@ function Contenido() {
                           {ins.texto}
                         </span>
                         {v.estadoActual === "PRIMER_CONTACTO" &&
-                          !v.consolidadorId && (
+                          !v.consolidadorId &&
+                          (v.redId || v.grupoId) && (
                             <span className="rounded-full border border-wine/20 bg-wine/10 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-wine uppercase">
                               No asignado 2do
                             </span>
                           )}
+                        {!v.redId && !v.grupoId && !v.consolidadorId && (
+                          <span className="rounded-full border border-wine/20 bg-wine/10 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-wine uppercase">
+                            Sin asignar
+                          </span>
+                        )}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-zinc-500">
                         {v.telefono && `${formatearTelefono(v.telefono)} • `}

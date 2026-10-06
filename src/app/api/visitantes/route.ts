@@ -46,6 +46,13 @@ export async function GET(req: Request) {
   const alcance: Record<string, unknown> = sinAsignar
     ? { ...base, activo: true, ...NECESITA_ASIGNACION }
     : { ...base, activo: true, ...ASIGNADO };
+  // Tab Todos (gestores): incluye asignados y no asignados. Los no
+  // asignados van con alcance de iglesia (ignoran red/grupo/consolidador,
+  // como su tab) y nunca fuera del permiso de verlos.
+  const todos =
+    !sinAsignar &&
+    url.searchParams.get("todos") === "1" &&
+    veNoAsignados(s);
   if (!sinAsignar) {
     const rg = await validarRedGrupo(
       s,
@@ -74,6 +81,28 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     take: 100,
   });
+  // Unión con no asignados (evita duplicados: 1er contacto con red pero
+  // sin consolidador sale en ambas).
+  let listaJunta = listaBase;
+  if (todos) {
+    const sin = await db.visitante.findMany({
+      where: { ...base, activo: true, ...NECESITA_ASIGNACION },
+      include: {
+        origen: { select: { nombre: true } },
+        consolidador: { select: { nombre: true, apellido: true } },
+        iglesia: { select: { nombre: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    const vistos = new Set(listaBase.map((v) => v.id));
+    listaJunta = [
+      ...listaBase,
+      ...sin.filter((v) => !vistos.has(v.id)),
+    ]
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+      .slice(0, 100);
+  }
 
   // SQLite compara texto con mayúsculas/acentos estrictos: filtramos aquí
   // sin distinguir mayúsculas ni acentos (nombres en español).
@@ -84,12 +113,12 @@ export async function GET(req: Request) {
       .replace(/[^a-z0-9 ]/g, "");
   const qn = normaliza(q);
   const lista = qn
-    ? listaBase.filter((v) =>
+    ? listaJunta.filter((v) =>
         normaliza(
           `${v.nombre} ${v.apellido} ${v.telefono ?? ""}`
         ).includes(qn)
       )
-    : listaBase;
+    : listaJunta;
 
   const redIds = [...new Set(lista.map((v) => v.redId).filter(Boolean))];
   const grupoIds = [...new Set(lista.map((v) => v.grupoId).filter(Boolean))];
