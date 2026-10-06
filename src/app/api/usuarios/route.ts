@@ -86,7 +86,10 @@ export async function GET(req: Request) {
       select: { id: true, iglesiaId: true, redId: true },
     });
   }
-  // Filtrar por consolidador = mostrar su cadena (pastores/líderes de sus iglesias).
+  // Filtrar por consolidador = solo ese usuario más el nivel iglesia de
+  // su(s) iglesia(s) (pastor/líder consolidador, siempre visibles).
+  // Lo inválido se ignora sin ampliar nada.
+  let consoId: string | undefined;
   let iglesiasConso: string[] | null = null;
   if (qConso) {
     const c = await db.usuario.findFirst({
@@ -97,39 +100,77 @@ export async function GET(req: Request) {
         ...(propias
           ? { iglesias: { some: { iglesiaId: { in: propias } } } }
           : {}),
+        ...(iglesiaId ? { iglesias: { some: { iglesiaId } } } : {}),
       },
-      select: { iglesias: { select: { iglesiaId: true } } },
+      select: {
+        id: true,
+        iglesias: { select: { iglesiaId: true } },
+      },
     });
-    if (c)
+    if (c) {
+      consoId = c.id;
+      const todas = c.iglesias.map((x) => x.iglesiaId);
       iglesiasConso = propias
-        ? c.iglesias.map((x) => x.iglesiaId).filter((id) => propias.includes(id))
-        : c.iglesias.map((x) => x.iglesiaId);
+        ? todas.filter((id) => propias.includes(id))
+        : todas;
+    }
+  }
+
+  // Pertenecer a una red incluye ser miembro de uno de sus grupos
+  // (el líder de grupo solo guarda grupoId, sin redId directa).
+  let gruposDeRed: string[] = [];
+  if (red) {
+    const gs = await db.grupo.findMany({
+      where: { redId: red.id, activo: true },
+      select: { id: true },
+    });
+    gruposDeRed = gs.map((g) => g.id);
   }
 
   // Pastor y líder consolidador son nivel iglesia (visibles dentro de la
-  // iglesia filtrada); el resto debe coincidir con red/grupo.
+  // iglesia filtrada); el resto debe coincidir con red/grupo/consolidador.
   // Superadmin ve pastores/líderes; los gestores ven todos los roles de su alcance.
   const CADENA: ("PASTOR" | "LIDER_CONSOLIDADOR" | "SUPERADMIN")[] = [
     "PASTOR",
     "LIDER_CONSOLIDADOR",
     "SUPERADMIN",
   ];
+  const NIVEL_IGLESIA: string[] = esSA ? [...CADENA] : ["PASTOR", "LIDER_CONSOLIDADOR"];
   const enIglesia = (id: string) => ({ iglesias: { some: { iglesiaId: id } } });
+  // Base de iglesia: filtro explícito > iglesias del consolidador > propias.
+  const baseIglesia = iglesiaId
+    ? enIglesia(iglesiaId)
+    : iglesiasConso
+      ? { iglesias: { some: { iglesiaId: { in: iglesiasConso } } } }
+      : propias && !iglesiasConso
+        ? { iglesias: { some: { iglesiaId: { in: propias } } } }
+        : {};
+  const condicionesAND: Record<string, unknown>[] = [];
+  if (red) {
+    const opcs: Record<string, unknown>[] = [
+      { rol: { in: NIVEL_IGLESIA } },
+      { redId: red.id },
+    ];
+    if (gruposDeRed.length > 0)
+      opcs.push({ grupoId: { in: gruposDeRed } });
+    condicionesAND.push({ OR: opcs });
+  }
+  if (grupo) {
+    condicionesAND.push({
+      OR: [{ rol: { in: NIVEL_IGLESIA } }, { grupoId: grupo.id }],
+    });
+  }
+  if (consoId) {
+    condicionesAND.push({
+      OR: [{ rol: { in: NIVEL_IGLESIA } }, { id: consoId }],
+    });
+  }
   const usuarios = await db.usuario.findMany({
     where: {
       ...(esSA ? { rol: { in: CADENA } } : { rol: { not: "SUPERADMIN" } }),
       activo: true,
-      ...(propias && !iglesiaId && !iglesiasConso
-        ? { iglesias: { some: { iglesiaId: { in: propias } } } }
-        : {}),
-      ...(iglesiaId ? enIglesia(iglesiaId) : {}),
-      ...(iglesiasConso ? { iglesias: { some: { iglesiaId: { in: iglesiasConso } } } } : {}),
-      ...(red
-        ? { OR: [{ redId: red.id }, enIglesia(red.iglesiaId)] }
-        : {}),
-      ...(grupo
-        ? { OR: [{ grupoId: grupo.id }, enIglesia(grupo.iglesiaId)] }
-        : {}),
+      ...baseIglesia,
+      ...(condicionesAND.length > 0 ? { AND: condicionesAND } : {}),
     },
     include: {
       iglesias: {
