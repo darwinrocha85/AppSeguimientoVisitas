@@ -51,17 +51,16 @@ export async function GET(req: Request) {
   const propias = esSA ? null : s.iglesias;
 
   // Filtros validados (lo inválido se ignora sin ampliar nada).
+  // OJO: no mezclar `id: qX` con `...{ id: { in: ... } }` en el mismo
+  // objeto: la segunda clave `id` sobrescribe a la primera y el filtro
+  // acabaría apuntando a otra iglesia. Se valida en dos pasos.
   let iglesiaId: string | undefined;
   if (qIglesia) {
     const ig = await db.iglesia.findFirst({
-      where: {
-        id: qIglesia,
-        activo: true,
-        ...(propias ? { id: { in: propias } } : {}),
-      },
+      where: { id: qIglesia, activo: true },
       select: { id: true },
     });
-    if (ig) iglesiaId = ig.id;
+    if (ig && (!propias || propias.includes(ig.id))) iglesiaId = ig.id;
   }
   let red: { id: string; iglesiaId: string } | null = null;
   if (qRed) {
@@ -92,15 +91,19 @@ export async function GET(req: Request) {
   let consoId: string | undefined;
   let iglesiasConso: string[] | null = null;
   if (qConso) {
+    // Si hay iglesia filtrada (ya validada dentro de las propias) basta
+    // con exigir pertenencia a ella; si no, a las propias.
+    const alcanceConso = iglesiaId
+      ? { iglesias: { some: { iglesiaId } } }
+      : propias
+        ? { iglesias: { some: { iglesiaId: { in: propias } } } }
+        : {};
     const c = await db.usuario.findFirst({
       where: {
         id: qConso,
         activo: true,
         rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
-        ...(propias
-          ? { iglesias: { some: { iglesiaId: { in: propias } } } }
-          : {}),
-        ...(iglesiaId ? { iglesias: { some: { iglesiaId } } } : {}),
+        ...alcanceConso,
       },
       select: {
         id: true,
