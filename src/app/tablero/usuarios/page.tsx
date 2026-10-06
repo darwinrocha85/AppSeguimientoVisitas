@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ETIQUETA_ROL,
@@ -51,6 +51,7 @@ export default function Usuarios() {
     grupo,
     consolidador,
     sesion,
+    resumen,
   } = useTablero();
   const esSuper = sesion?.rol === "SUPERADMIN";
   const esGestorUi =
@@ -396,6 +397,314 @@ export default function Usuarios() {
     void cargarListas();
   }, [mostrarAlcanceEdicion, iglesiaEdicion, editRed, editRol]);
 
+  /* ---------- Vista por redes (como Mi equipo) ---------- */
+
+  const esNivel = (rol: Rol) => rol === "PASTOR" || rol === "LIDER_CONSOLIDADOR";
+
+  const nivelVisibles = useMemo(
+    () => usuarios.filter((u) => esNivel(u.rol)),
+    [usuarios]
+  );
+
+  // Iglesia → red de cada grupo (el líder de grupo solo guarda grupoId).
+  const redDeGrupo = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of resumen?.grupos ?? []) m.set(g.id, g.redId);
+    return m;
+  }, [resumen]);
+
+  const iglesiaIdsVista = iglesiaId
+    ? [iglesiaId]
+    : iglesias.map((i) => i.id);
+
+  // Estructura de redes a mostrar (respeta la cascada y lo ya filtrado
+  // en el servidor; las vacías se muestran igual).
+  const redesVista = useMemo(() => {
+    let rs = (resumen?.redes ?? []).filter((r) =>
+      iglesiaIdsVista.includes(r.iglesiaId)
+    );
+    if (red !== "todas") rs = rs.filter((r) => r.id === red);
+    if (grupo !== "todos") {
+      const g = (resumen?.grupos ?? []).find((x) => x.id === grupo);
+      rs = g ? rs.filter((r) => r.id === g.redId) : [];
+    }
+    if (consolidador !== "todos") {
+      const cu = usuarios.find((x) => x.id === consolidador);
+      if (cu && !esNivel(cu.rol)) {
+        const redCu = cu.grupoId
+          ? (redDeGrupo.get(cu.grupoId) ?? cu.redId ?? null)
+          : (cu.redId ?? null);
+        rs = redCu ? rs.filter((r) => r.id === redCu) : [];
+      }
+    }
+    return rs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumen, iglesias, iglesiaId, red, grupo, consolidador, usuarios, redDeGrupo]);
+
+  function gruposDe(redId: string) {
+    let gs = (resumen?.grupos ?? []).filter((g) => g.redId === redId);
+    if (grupo !== "todos") gs = gs.filter((g) => g.id === grupo);
+    if (consolidador !== "todos") {
+      const cu = usuarios.find((x) => x.id === consolidador);
+      if (cu?.grupoId) gs = gs.filter((g) => g.id === cu.grupoId);
+    }
+    return gs;
+  }
+
+  // Usuarios operativos de la red (directos o vía grupo), sin nivel iglesia.
+  function usuariosDeRed(redId: string) {
+    return usuarios.filter(
+      (u) =>
+        !esNivel(u.rol) &&
+        (u.redId === redId ||
+          (!!u.grupoId && redDeGrupo.get(u.grupoId) === redId))
+    );
+  }
+
+  function nivelDe(iglesia: string) {
+    return nivelVisibles.filter((u) =>
+      u.iglesias.some((x) => x.iglesia.id === iglesia)
+    );
+  }
+
+  // Atajo "Agregar" por red/grupo: abre el formulario ya ubicado.
+  function agregarEn(iglesia: string, redId: string, grupoId?: string) {
+    setFIglesia(iglesia);
+    setFRed(redId);
+    setFGrupo(grupoId ?? "");
+    setFLideraGrupo(false);
+    if (fRol === "LIDER_CONSOLIDADOR") setFRol("CONSOLIDADOR");
+    setCreando(true);
+    requestAnimationFrame(() => {
+      document
+        .getElementById("form-nuevo-usuario")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  // Ficha de usuario (editar / perfil / desactivar + edición inline).
+  // Se reutiliza en la vista plana (superadmin) y en la vista por redes.
+  function tarjeta(u: Usuario) {
+    return (
+      <li
+        key={u.id}
+        className="rounded-xl border border-sand/70 bg-paper p-3"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy/10 text-lg font-black text-navy">
+            {u.nombre.charAt(0).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => {
+                  // El nombre edita directo si hay permiso; si no, abre
+                  // el perfil de solo lectura.
+                  if (puedeEditar(u)) {
+                    if (editandoId === u.id) setEditandoId(null);
+                    else abrirEdicion(u);
+                  } else {
+                    setPerfil(u);
+                  }
+                }}
+                title={puedeEditar(u) ? "Editar datos y rol" : "Ver perfil y afiliaciones"}
+                className="cursor-pointer text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
+              >
+                {u.nombre} {u.apellido}
+              </button>
+              <span className="rounded-full border border-navy/20 bg-navy/5 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-navy">
+                {ETIQUETA_ROL[u.rol]}
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-zinc-500">
+              @{u.usuario}
+              {u.telefono && ` • ${formatearTelefono(u.telefono)}`}
+              {[u.red, u.grupo].filter(Boolean).length > 0 &&
+                ` • ${[u.red, u.grupo].filter(Boolean).join(" • ")}`}
+            </span>
+            {u.iglesias.length > 0 && (
+              <span className="mt-0.5 block truncate text-xs">
+                {u.iglesias.map((x, idx) => (
+                  <span key={x.iglesia.id}>
+                    {idx > 0 && <span className="text-zinc-400"> • </span>}
+                    <Link
+                      href={`/tablero/iglesias/${x.iglesia.id}`}
+                      title={`Ver ${x.iglesia.nombre}`}
+                      onClick={() => irAIglesia(x.iglesia.id)}
+                      className="font-semibold text-navy/80 underline-offset-2 hover:underline"
+                    >
+                      {x.iglesia.nombre}
+                    </Link>
+                  </span>
+                ))}
+              </span>
+            )}
+          </span>
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            {u.iglesias.length === 1 ? (
+              <Link
+                href={`/tablero/iglesias/${u.iglesias[0].iglesia.id}`}
+                title="Ver iglesia"
+                onClick={() => irAIglesia(u.iglesias[0].iglesia.id)}
+                className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
+              >
+                1 iglesia
+              </Link>
+            ) : u.iglesias.length > 1 ? (
+              <Link
+                href={`/tablero/iglesias?usuario=${u.id}`}
+                title="Ver sus iglesias"
+                className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
+              >
+                {u.iglesias.length} iglesias
+              </Link>
+            ) : (
+              <span className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-zinc-400">
+                Sin iglesia
+              </span>
+            )}
+            {puedeEditar(u) && (
+              <span className="flex gap-1">
+                <button
+                  onClick={() =>
+                    editandoId === u.id
+                      ? setEditandoId(null)
+                      : abrirEdicion(u)
+                  }
+                  className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
+                >
+                  {editandoId === u.id ? "Cerrar" : "Editar"}
+                </button>
+                <button
+                  onClick={() => setPerfil(u)}
+                  className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
+                >
+                  Perfil
+                </button>
+                <button
+                  onClick={() => eliminar(u)}
+                  className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-wine/80 underline-offset-2 hover:underline"
+                >
+                  Eliminar
+                </button>
+              </span>
+            )}
+          </span>
+        </div>
+        {editandoId === u.id && (
+          <form
+            onSubmit={guardar}
+            className="mt-3 grid grid-cols-1 gap-2 border-t border-sand/60 pt-3 md:grid-cols-3"
+          >
+            <input
+              aria-label="Nombre"
+              className={campo}
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              required
+            />
+            <input
+              aria-label="Apellido"
+              className={campo}
+              value={apellido}
+              onChange={(e) => setApellido(e.target.value)}
+              required
+            />
+            <input
+              aria-label="Teléfono"
+              className={campo}
+              placeholder="Teléfono (607 35 00 44)"
+              inputMode="numeric"
+              value={formatearTelefono(telefono)}
+              onChange={(e) => setTelefono(soloDigitos(e.target.value))}
+            />
+            {esSuper ? (
+              <div className="md:col-span-2">
+                <SelectorIglesias
+                  iglesias={iglesias}
+                  seleccionadas={asignadas}
+                  onChange={setAsignadas}
+                />
+              </div>
+            ) : u.rol === "LIDER_CONSOLIDADOR" ? (
+              <div className="md:col-span-2">
+                <SelectorIglesias
+                  iglesias={iglesias}
+                  seleccionadas={asignadas}
+                  onChange={setAsignadas}
+                />
+              </div>
+            ) : (
+              <>
+                {!esSuper && ROLES_BAJOS.some((r) => r.value === u.rol) && (
+                  <select
+                    aria-label="Rol"
+                    className={`${campo} cursor-pointer`}
+                    value={editRol}
+                    onChange={(e) => setEditRol(e.target.value as Rol)}
+                  >
+                    {ROLES_BAJOS.map((r) => (
+                      <option key={r.value} value={r.value}>{r.texto}</option>
+                    ))}
+                  </select>
+                )}
+                <select
+                  aria-label="Red"
+                  className={`${campo} cursor-pointer`}
+                  value={editRed}
+                  required={editRol === "CONSOLIDADOR" || editRol === "LIDER_RED"}
+                  disabled={redesEdicion.length === 0}
+                  title={redesEdicion.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined}
+                  onChange={(e) => {
+                    setEditRed(e.target.value);
+                    setEditGrupo("");
+                  }}
+                >
+                  <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_RED" ? "Elige la red…" : "Sin red…"}</option>
+                  {redesEdicion.map((r) => (
+                    <option key={r.id} value={r.id}>{r.nombre}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Grupo"
+                  className={`${campo} cursor-pointer`}
+                  value={editGrupo}
+                  required={editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO"}
+                  disabled={gruposEdicion.length === 0}
+                  title={editRol === "LIDER_RED" ? "Grupo que también lidera (opcional)" : gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
+                  onChange={(e) => setEditGrupo(e.target.value)}
+                >
+                  <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO" ? "Elige el grupo…" : "Sin grupo…"}</option>
+                  {gruposEdicion.map((g) => (
+                    <option key={g.id} value={g.id}>{g.nombre}</option>
+                  ))}
+                </select>
+                {(editRol === "LIDER_RED" || editRol === "LIDER_GRUPO") && (
+                  <p className="text-xs text-zinc-500 md:col-span-1">
+                    También puede consolidar: asígnale visitantes en Visitantes → Asignar.
+                  </p>
+                )}
+              </>
+            )}
+            <div className="flex items-end gap-2">
+              <button
+                disabled={guardando}
+                className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-navy-dark disabled:opacity-60"
+              >
+                {guardando ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+            {error && (
+              <p role="alert" className="text-sm font-semibold text-wine md:col-span-3">
+                {error}
+              </p>
+            )}
+          </form>
+        )}
+      </li>
+    );
+  }
+
   if (cargando) {
     return <p className="text-sm font-semibold text-navy">Cargando usuarios…</p>;
   }
@@ -451,6 +760,7 @@ export default function Usuarios() {
 
       {esGestorUi && creando && (
         <form
+          id="form-nuevo-usuario"
           onSubmit={crear}
           className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-paper p-3 md:grid-cols-3"
         >
@@ -540,7 +850,22 @@ export default function Usuarios() {
         </p>
       )}
 
-      {usuarios.length === 0 ? (
+      {esSuper ? (
+        usuarios.length === 0 ? (
+          <div className="mt-4">
+            <Vacio
+              titulo="Sin usuarios en este filtro"
+              detalle="Ajusta los filtros superiores o crea el primero."
+            />
+          </div>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {usuarios.map((u) => tarjeta(u))}
+          </ul>
+        )
+      ) : usuarios.length === 0 &&
+        redesVista.length === 0 &&
+        nivelVisibles.length === 0 ? (
         <div className="mt-4">
           <Vacio
             titulo="Sin usuarios en este filtro"
@@ -548,226 +873,125 @@ export default function Usuarios() {
           />
         </div>
       ) : (
-        <ul className="mt-4 space-y-2">
-          {usuarios.map((u) => (
-            <li
-              key={u.id}
-              className="rounded-xl border border-sand/70 bg-paper p-3"
-            >
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy/10 text-lg font-black text-navy">
-                  {u.nombre.charAt(0).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1 leading-tight">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => {
-                        // El nombre edita directo si hay permiso; si no, abre
-                        // el perfil de solo lectura.
-                        if (puedeEditar(u)) {
-                          if (editandoId === u.id) setEditandoId(null);
-                          else abrirEdicion(u);
-                        } else {
-                          setPerfil(u);
-                        }
-                      }}
-                      title={puedeEditar(u) ? "Editar datos y rol" : "Ver perfil y afiliaciones"}
-                      className="cursor-pointer text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
-                    >
-                      {u.nombre} {u.apellido}
-                    </button>
-                    <span className="rounded-full border border-navy/20 bg-navy/5 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-navy">
-                      {ETIQUETA_ROL[u.rol]}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-zinc-500">
-                    @{u.usuario}
-                    {u.telefono && ` • ${formatearTelefono(u.telefono)}`}
-                    {[u.red, u.grupo].filter(Boolean).length > 0 &&
-                      ` • ${[u.red, u.grupo].filter(Boolean).join(" • ")}`}
-                  </span>
-                  {u.iglesias.length > 0 && (
-                    <span className="mt-0.5 block truncate text-xs">
-                      {u.iglesias.map((x, idx) => (
-                        <span key={x.iglesia.id}>
-                          {idx > 0 && <span className="text-zinc-400"> • </span>}
-                          <Link
-                            href={`/tablero/iglesias/${x.iglesia.id}`}
-                            title={`Ver ${x.iglesia.nombre}`}
-                            onClick={() => irAIglesia(x.iglesia.id)}
-                            className="font-semibold text-navy/80 underline-offset-2 hover:underline"
-                          >
-                            {x.iglesia.nombre}
-                          </Link>
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </span>
-                <span className="flex shrink-0 flex-col items-end gap-1">
-                  {u.iglesias.length === 1 ? (
-                    <Link
-                      href={`/tablero/iglesias/${u.iglesias[0].iglesia.id}`}
-                      title="Ver iglesia"
-                      onClick={() => irAIglesia(u.iglesias[0].iglesia.id)}
-                      className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
-                    >
-                      1 iglesia
-                    </Link>
-                  ) : u.iglesias.length > 1 ? (
-                    <Link
-                      href={`/tablero/iglesias?usuario=${u.id}`}
-                      title="Ver sus iglesias"
-                      className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-navy hover:border-navy/30"
-                    >
-                      {u.iglesias.length} iglesias
-                    </Link>
-                  ) : (
-                    <span className="rounded-full border border-sand bg-white px-3 py-1 text-xs font-bold text-zinc-400">
-                      Sin iglesia
-                    </span>
-                  )}
-                  {puedeEditar(u) && (
-                    <span className="flex gap-1">
-                      <button
-                        onClick={() =>
-                          editandoId === u.id
-                            ? setEditandoId(null)
-                            : abrirEdicion(u)
-                        }
-                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
-                      >
-                        {editandoId === u.id ? "Cerrar" : "Editar"}
-                      </button>
-                      <button
-                        onClick={() => setPerfil(u)}
-                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
-                      >
-                        Perfil
-                      </button>
-                      <button
-                        onClick={() => eliminar(u)}
-                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-wine/80 underline-offset-2 hover:underline"
-                      >
-                        Eliminar
-                      </button>
-                    </span>
-                  )}
-                </span>
-              </div>
-              {editandoId === u.id && (
-                <form
-                  onSubmit={guardar}
-                  className="mt-3 grid grid-cols-1 gap-2 border-t border-sand/60 pt-3 md:grid-cols-3"
-                >
-                  <input
-                    aria-label="Nombre"
-                    className={campo}
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    required
-                  />
-                  <input
-                    aria-label="Apellido"
-                    className={campo}
-                    value={apellido}
-                    onChange={(e) => setApellido(e.target.value)}
-                    required
-                  />
-                  <input
-                    aria-label="Teléfono"
-                    className={campo}
-                    placeholder="Teléfono (607 35 00 44)"
-                    inputMode="numeric"
-                    value={formatearTelefono(telefono)}
-                    onChange={(e) => setTelefono(soloDigitos(e.target.value))}
-                  />
-                  {esSuper ? (
-                    <div className="md:col-span-2">
-                      <SelectorIglesias
-                        iglesias={iglesias}
-                        seleccionadas={asignadas}
-                        onChange={setAsignadas}
-                      />
+        <div className="mt-4 space-y-6">
+          {iglesiaIdsVista.map((ig) => {
+            const infoIgle = iglesias.find((x) => x.id === ig);
+            const nivel = nivelDe(ig);
+            const redesIg = redesVista.filter((r) => r.iglesiaId === ig);
+            if (nivel.length === 0 && redesIg.length === 0) return null;
+            return (
+              <section key={ig} aria-label={infoIgle?.nombre ?? "Iglesia"}>
+                {iglesiaIdsVista.length > 1 && (
+                  <h3 className="text-[15px] font-black text-navy">
+                    {infoIgle?.nombre ?? "Iglesia"}
+                  </h3>
+                )}
+                {nivel.length > 0 && (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-grape text-white">
+                        <Icono className="h-4 w-4">{I.usuarioMas}</Icono>
+                      </span>
+                      <h4 className="text-[13px] font-black text-navy">
+                        Pastor y líderes de consolidación
+                      </h4>
                     </div>
-                  ) : u.rol === "LIDER_CONSOLIDADOR" ? (
-                    <div className="md:col-span-2">
-                      <SelectorIglesias
-                        iglesias={iglesias}
-                        seleccionadas={asignadas}
-                        onChange={setAsignadas}
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      {!esSuper && ROLES_BAJOS.some((r) => r.value === u.rol) && (
-                        <select
-                          aria-label="Rol"
-                          className={`${campo} cursor-pointer`}
-                          value={editRol}
-                          onChange={(e) => setEditRol(e.target.value as Rol)}
+                    <ul className="mt-2 space-y-2">
+                      {nivel.map((u) => tarjeta(u))}
+                    </ul>
+                  </div>
+                )}
+                {redesIg.map((r) => {
+                  const gente = usuariosDeRed(r.id);
+                  const gs = gruposDe(r.id);
+                  const enRed = gente.filter((u) => !u.grupoId);
+                  return (
+                    <div key={r.id} className="mt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy text-white">
+                            <Icono className="h-4 w-4">{I.visitantes}</Icono>
+                          </span>
+                          <div className="leading-tight">
+                            <h4 className="text-[13px] font-black text-navy">
+                              {r.nombre}
+                            </h4>
+                            <p className="text-[11px] text-zinc-500">
+                              {gente.length === 0
+                                ? "Red vacía"
+                                : `${gente.length} usuario(s)`}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => agregarEn(ig, r.id)}
+                          title={`Agregar usuario en ${r.nombre}`}
+                          className="min-h-[40px] cursor-pointer rounded-full bg-navy px-4 text-xs font-black tracking-wide text-white uppercase transition-all duration-200 hover:bg-navy-dark"
                         >
-                          {ROLES_BAJOS.map((r) => (
-                            <option key={r.value} value={r.value}>{r.texto}</option>
-                          ))}
-                        </select>
+                          + Agregar
+                        </button>
+                      </div>
+                      {enRed.length > 0 && (
+                        <ul className="mt-2 space-y-2">
+                          {enRed.map((u) => tarjeta(u))}
+                        </ul>
                       )}
-                      <select
-                        aria-label="Red"
-                        className={`${campo} cursor-pointer`}
-                        value={editRed}
-                        required={editRol === "CONSOLIDADOR" || editRol === "LIDER_RED"}
-                        disabled={redesEdicion.length === 0}
-                        title={redesEdicion.length === 0 ? "Sin redes en esta iglesia: créalas primero en su ficha" : undefined}
-                        onChange={(e) => {
-                          setEditRed(e.target.value);
-                          setEditGrupo("");
-                        }}
-                      >
-                        <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_RED" ? "Elige la red…" : "Sin red…"}</option>
-                        {redesEdicion.map((r) => (
-                          <option key={r.id} value={r.id}>{r.nombre}</option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="Grupo"
-                        className={`${campo} cursor-pointer`}
-                        value={editGrupo}
-                        required={editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO"}
-                        disabled={gruposEdicion.length === 0}
-                        title={editRol === "LIDER_RED" ? "Grupo que también lidera (opcional)" : gruposEdicion.length === 0 ? "Sin grupos: elige una red o créalos en la ficha de la iglesia" : undefined}
-                        onChange={(e) => setEditGrupo(e.target.value)}
-                      >
-                        <option value="">{editRol === "CONSOLIDADOR" || editRol === "LIDER_GRUPO" ? "Elige el grupo…" : "Sin grupo…"}</option>
-                        {gruposEdicion.map((g) => (
-                          <option key={g.id} value={g.id}>{g.nombre}</option>
-                        ))}
-                      </select>
-                      {(editRol === "LIDER_RED" || editRol === "LIDER_GRUPO") && (
-                        <p className="text-xs text-zinc-500 md:col-span-1">
-                          También puede consolidar: asígnale visitantes en Visitantes → Asignar.
+                      {gs.map((g) => {
+                        const gp = gente.filter((u) => u.grupoId === g.id);
+                        return (
+                          <div key={g.id} className="mt-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[13px] font-black text-navy">
+                                {g.nombre}{" "}
+                                <span className="font-bold text-zinc-500">
+                                  ({gp.length})
+                                </span>
+                              </p>
+                              <button
+                                onClick={() => agregarEn(ig, r.id, g.id)}
+                                title={`Agregar usuario en ${g.nombre}`}
+                                className="min-h-[36px] cursor-pointer rounded-full border border-navy/30 bg-white px-3 text-[11px] font-black tracking-wide text-navy uppercase hover:border-navy/60"
+                              >
+                                + Agregar
+                              </button>
+                            </div>
+                            {gp.length === 0 ? (
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Sin personas todavía.
+                              </p>
+                            ) : (
+                              <ul className="mt-2 space-y-2">
+                                {gp.map((u) => tarjeta(u))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {gs.length === 0 && enRed.length === 0 && (
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Red vacía: aún no tiene usuarios. Usa Agregar
+                          para crear el primero.
                         </p>
                       )}
-                    </>
-                  )}
-                  <div className="flex items-end gap-2">
-                    <button
-                      disabled={guardando}
-                      className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-navy-dark disabled:opacity-60"
+                    </div>
+                  );
+                })}
+                {redesIg.length === 0 && (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Sin redes en esta iglesia: créalas primero en su{" "}
+                    <Link
+                      href={`/tablero/iglesias/${ig}`}
+                      className="font-bold text-navy underline underline-offset-2"
                     >
-                      {guardando ? "Guardando…" : "Guardar"}
-                    </button>
-                  </div>
-                  {error && (
-                    <p role="alert" className="text-sm font-semibold text-wine md:col-span-3">
-                      {error}
-                    </p>
-                  )}
-                </form>
-              )}
-            </li>
-          ))}
-        </ul>
+                      ficha
+                    </Link>
+                    .
+                  </p>
+                )}
+              </section>
+            );
+          })}
+        </div>
       )}
 
       {perfil && (
@@ -819,6 +1043,36 @@ export default function Usuarios() {
                 </dd>
               </div>
             )}
+            {(() => {
+              const asig = (resumen?.consolidadores ?? []).find(
+                (x) => x.id === perfil.id
+              );
+              if (!asig)
+                return (
+                  <div className="flex justify-between gap-3">
+                    <dt className="font-bold text-zinc-500">Visitantes</dt>
+                    <dd className="font-semibold text-zinc-500">
+                      Sin visitantes asignados
+                    </dd>
+                  </div>
+                );
+              return (
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="font-bold text-zinc-500">
+                    Visitantes ({asig.total})
+                  </dt>
+                  <dd>
+                    <Link
+                      href={`/tablero/visitantes?consolidador=${perfil.id}`}
+                      title={`Ver visitantes de ${perfil.nombre} ${perfil.apellido}`}
+                      className="inline-flex min-h-[40px] items-center rounded-full bg-navy px-4 text-xs font-black tracking-wide text-white uppercase transition-all duration-200 hover:bg-navy-dark"
+                    >
+                      Ver asignados
+                    </Link>
+                  </dd>
+                </div>
+              );
+            })()}
           </dl>
           {puedeEditar(perfil) && (
             <button

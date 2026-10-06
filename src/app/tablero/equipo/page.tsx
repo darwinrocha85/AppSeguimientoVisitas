@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { I, Icono, Vacio, useTablero } from "../ui";
 import { formatearTelefono } from "@/lib/telefono";
@@ -33,16 +34,29 @@ type Equipo = {
   iglesia?: { id: string; nombre: string } | null;
 } | null;
 
-function FichaPersona({ p }: { p: PersonaEquipo }) {
+function FichaPersona({ p, href }: { p: PersonaEquipo; href?: string }) {
+  const nombre = (
+    <span className="block truncate text-[14px] font-bold text-navy">
+      {p.nombre} {p.apellido}
+    </span>
+  );
   return (
     <li className="flex min-w-[240px] snap-start items-center gap-3 rounded-xl border border-sand/70 bg-paper p-3">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy/10 text-base font-black text-navy">
         {p.nombre.charAt(0).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1 leading-tight">
-        <span className="block truncate text-[14px] font-bold text-navy">
-          {p.nombre} {p.apellido}
-        </span>
+        {href ? (
+          <Link
+            href={href}
+            title={`Ver información y visitantes de ${p.nombre} ${p.apellido}`}
+            className="underline-offset-2 hover:underline"
+          >
+            {nombre}
+          </Link>
+        ) : (
+          nombre
+        )}
         <span className="mt-0.5 block truncate text-xs text-zinc-500">
           {p.detalle ?? ""}
           {p.telefono ? ` • ${formatearTelefono(p.telefono)}` : ""}
@@ -52,7 +66,13 @@ function FichaPersona({ p }: { p: PersonaEquipo }) {
   );
 }
 
-function BloqueGrupo({ g }: { g: GrupoEquipo }) {
+function BloqueGrupo({
+  g,
+  hrefDe,
+}: {
+  g: GrupoEquipo;
+  hrefDe?: (p: PersonaEquipo) => string | undefined;
+}) {
   return (
     <div key={g.id} className="mt-3">
       <h3 className="text-[13px] font-black text-navy">{g.nombre}</h3>
@@ -61,7 +81,7 @@ function BloqueGrupo({ g }: { g: GrupoEquipo }) {
       ) : (
         <ul className="mt-1.5 flex snap-x gap-2 overflow-x-auto pb-1">
           {g.personas.map((p) => (
-            <FichaPersona key={p.id} p={p} />
+            <FichaPersona key={p.id} p={p} href={hrefDe?.(p)} />
           ))}
         </ul>
       )}
@@ -70,7 +90,7 @@ function BloqueGrupo({ g }: { g: GrupoEquipo }) {
 }
 
 export default function Equipo() {
-  const { sesion, iglesias, iglesiaId } = useTablero();
+  const { sesion, iglesias, iglesiaId, red, grupo, consolidador } = useTablero();
   const [equipo, setEquipo] = useState<Equipo>(null);
   const [cargando, setCargando] = useState(true);
 
@@ -79,6 +99,33 @@ export default function Equipo() {
     sesion?.rol === "LIDER_CONSOLIDADOR" ||
     sesion?.rol === "SUPERADMIN";
   const idIglesia = esGestor ? iglesiaId || iglesias[0]?.id || "" : "";
+
+  // El nombre lleva a su información y visitantes asignados (los que
+  // consolidan; el pastor no consolida y el raso ya ve solo lo suyo).
+  function hrefVisita(p: PersonaEquipo): string | undefined {
+    if (sesion?.rol === "CONSOLIDADOR") return undefined;
+    if (
+      !["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"].includes(
+        p.rol
+      )
+    )
+      return undefined;
+    return `/tablero/visitantes?consolidador=${p.id}`;
+  }
+
+  // La vista respeta los filtros superiores de red/grupo/consolidador,
+  // igual que Usuarios (los datos ya vienen del alcance propio).
+  function soloRed<T extends { id: string }>(rs: T[]) {
+    return red === "todas" ? rs : rs.filter((r) => r.id === red);
+  }
+  function soloGrupo<T extends { id: string }>(gs: T[]) {
+    return grupo === "todos" ? gs : gs.filter((g) => g.id === grupo);
+  }
+  function soloConso(ps: PersonaEquipo[]) {
+    return consolidador === "todos"
+      ? ps
+      : ps.filter((p) => p.id === consolidador);
+  }
 
   useEffect(() => {
     async function cargar() {
@@ -129,6 +176,7 @@ export default function Equipo() {
 
   // Líder de red: dos bloques (Mi equipo / Mi equipo de red).
   if (sesion?.rol === "LIDER_RED") {
+    const gruposRed = soloGrupo(equipo.grupos ?? []);
     return (
       <div className="space-y-5">
         <section className="rounded-2xl border border-sand/60 bg-white p-4">
@@ -147,7 +195,7 @@ export default function Equipo() {
             {[equipo.pastor, equipo.liderConsolidador]
               .filter((p): p is PersonaEquipo => !!p)
               .map((p) => (
-                <FichaPersona key={p.id} p={p} />
+                <FichaPersona key={p.id} p={p} href={hrefVisita(p)} />
               ))}
           </ul>
         </section>
@@ -163,9 +211,15 @@ export default function Equipo() {
               </p>
             </div>
           </div>
-          {(equipo.grupos ?? []).map((g) => (
-            <BloqueGrupo key={g.id} g={g} />
-          ))}
+          {gruposRed.length === 0 ? (
+            <p className="mt-2 text-xs text-zinc-500">
+              Sin grupos en este filtro.
+            </p>
+          ) : (
+            gruposRed.map((g) => (
+              <BloqueGrupo key={g.id} g={g} hrefDe={hrefVisita} />
+            ))
+          )}
         </section>
       </div>
     );
@@ -173,6 +227,9 @@ export default function Equipo() {
 
   // Gestores y superadmin: equipo de la iglesia por redes.
   if (esGestor) {
+    const redesFiltradas = soloRed(equipo.redes ?? [])
+      .map((r) => ({ ...r, grupos: soloGrupo(r.grupos ?? []) }))
+      .filter((r) => grupo === "todos" || (r.grupos ?? []).length > 0);
     return (
       <div className="space-y-5">
         <section className="rounded-2xl border border-sand/60 bg-white p-4">
@@ -193,11 +250,16 @@ export default function Equipo() {
             {[equipo.pastor, ...(equipo.lideresConsolidadores ?? [])]
               .filter((p): p is PersonaEquipo => !!p)
               .map((p) => (
-                <FichaPersona key={p.id} p={p} />
+                <FichaPersona key={p.id} p={p} href={hrefVisita(p)} />
               ))}
           </ul>
         </section>
-        {(equipo.redes ?? []).map((r) => (
+        {redesFiltradas.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-sand bg-white/60 px-6 py-8 text-center text-sm text-zinc-500">
+            Sin redes en este filtro.
+          </p>
+        )}
+        {redesFiltradas.map((r) => (
           <section
             key={r.id}
             className="rounded-2xl border border-sand/60 bg-white p-4"
@@ -216,7 +278,7 @@ export default function Equipo() {
               </div>
             </div>
             {(r.grupos ?? []).map((g) => (
-              <BloqueGrupo key={g.id} g={g} />
+              <BloqueGrupo key={g.id} g={g} hrefDe={hrefVisita} />
             ))}
           </section>
         ))}
@@ -242,14 +304,14 @@ export default function Equipo() {
         {[equipo.pastor, equipo.liderConsolidador, equipo.liderRed, equipo.liderGrupo]
           .filter((p): p is PersonaEquipo => !!p)
           .map((p) => (
-            <FichaPersona key={p.id} p={p} />
+            <FichaPersona key={p.id} p={p} href={hrefVisita(p)} />
           ))}
-        {(equipo.consolidadores ?? []).map((p) => (
-          <FichaPersona key={p.id} p={p} />
+        {soloConso(equipo.consolidadores ?? []).map((p) => (
+          <FichaPersona key={p.id} p={p} href={hrefVisita(p)} />
         ))}
       </ul>
       {(equipo.grupos ?? []).map((g) => (
-        <BloqueGrupo key={g.id} g={g} />
+        <BloqueGrupo key={g.id} g={g} hrefDe={hrefVisita} />
       ))}
     </section>
   );

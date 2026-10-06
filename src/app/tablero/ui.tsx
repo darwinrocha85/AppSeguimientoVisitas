@@ -67,6 +67,7 @@ export type Resumen = {
     nombre: string;
     apellido: string;
     grupoId: string | null;
+    rol: string;
     total: number;
   }[];
   alertas: { iglesiaId: string; estado: string; maxHoras: number }[];

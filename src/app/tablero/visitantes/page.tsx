@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { I, Icono, Vacio, useTablero } from "../ui";
+import { ETIQUETA_ROL, I, Icono, Vacio, useTablero } from "../ui";
 import { formatearTelefono, soloDigitos } from "@/lib/telefono";
 import { VistaConsolidador } from "./vista-consolidador";
 
@@ -111,6 +111,10 @@ function Contenido() {
   const qp = useSearchParams();
   const router = useRouter();
   const estadoFiltro = qp.get("estado");
+  // Enlace profundo desde Equipo/Usuarios: ?consolidador=<id> filtra por
+  // esa persona y muestra su información (validado como en el servidor).
+  const paramConso = qp.get("consolidador");
+  const [paramAplicado, setParamAplicado] = useState<string | null>(null);
   const esGestorUi =
     sesion?.rol === "PASTOR" || sesion?.rol === "LIDER_CONSOLIDADOR";
   const veTabSinAsignar =
@@ -173,6 +177,99 @@ function Contenido() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [iglesiaId, red, grupo, consolidador, busqueda, tab]);
+
+  // Aplica ?consolidador=<id> una vez haya resumen (misma regla que la
+  // API: fuera de alcance se ignora sin ampliar nada).
+  /* eslint-disable react-hooks/set-state-in-effect -- enlace profundo desde Equipo/Usuarios */
+  useEffect(() => {
+    if (!paramConso || paramAplicado || !resumen || !sesion) return;
+    if (tab === "sinAsignar") return;
+    const c = (resumen.consolidadores ?? []).find((x) => x.id === paramConso);
+    if (!c) return;
+    if (sesion.rol === "CONSOLIDADOR") {
+      if (paramConso !== sesion.sub) return;
+    } else if (sesion.rol === "LIDER_GRUPO") {
+      if (!sesion.grupoId || c.grupoId !== sesion.grupoId) return;
+    } else if (sesion.rol === "LIDER_RED") {
+      if (!c.grupoId) return;
+      const g = (resumen.grupos ?? []).find((x) => x.id === c.grupoId);
+      if (!g || g.redId !== sesion.redId) return;
+    }
+    if (grupo !== "todos" && c.grupoId !== grupo) return;
+    if (red !== "todas") {
+      const g = c.grupoId
+        ? (resumen.grupos ?? []).find((x) => x.id === c.grupoId)
+        : undefined;
+      if (!g || g.redId !== red) return;
+    }
+    setConsolidador(paramConso);
+    setParamAplicado(paramConso);
+  }, [paramConso, paramAplicado, resumen, sesion, red, grupo, tab, setConsolidador]);
+
+  // Si el filtro se cambia a mano, el parámetro deja de mandar.
+  useEffect(() => {
+    if (!paramAplicado || consolidador === paramAplicado) return;
+    setParamAplicado(null);
+    const qs = new URLSearchParams();
+    const e = qp.get("estado");
+    const s = qp.get("sinAsignar");
+    if (e) qs.set("estado", e);
+    if (s) qs.set("sinAsignar", s);
+    router.replace(
+      qs.toString() ? `/tablero/visitantes?${qs}` : "/tablero/visitantes"
+    );
+  }, [paramAplicado, consolidador, qp, router]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Información de la persona filtrada (datos ya visibles en el alcance).
+  const infoConso =
+    paramAplicado && consolidador === paramAplicado
+      ? (resumen?.consolidadores ?? []).find((x) => x.id === paramAplicado)
+      : undefined;
+  const grupoConso = infoConso?.grupoId
+    ? (resumen?.grupos ?? []).find((g) => g.id === infoConso.grupoId)
+    : undefined;
+  const redConso = grupoConso
+    ? (resumen?.redes ?? []).find((r) => r.id === grupoConso.redId)
+    : undefined;
+  const iglesiaConso = grupoConso
+    ? iglesias.find((i) => i.id === grupoConso.iglesiaId)
+    : (iglesiaId ? iglesias.find((i) => i.id === iglesiaId) : undefined);
+  const bannerConso = infoConso ? (
+    <section
+      aria-label={`Visitantes de ${infoConso.nombre} ${infoConso.apellido}`}
+      className="rounded-2xl border border-navy/20 bg-navy/[0.04] p-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy text-lg font-black text-white">
+            {infoConso.nombre.charAt(0).toUpperCase()}
+          </span>
+          <div className="leading-tight">
+            <p className="text-[15px] font-black text-navy">
+              {infoConso.nombre} {infoConso.apellido}{" "}
+              <span className="ml-1 rounded-full border border-navy/20 bg-navy/5 px-2 py-0.5 align-middle text-[10px] font-black tracking-[0.06em]">
+                {ETIQUETA_ROL[infoConso.rol as keyof typeof ETIQUETA_ROL] ?? infoConso.rol}
+              </span>
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {[grupoConso?.nombre, redConso?.nombre, iglesiaConso?.nombre]
+                .filter(Boolean)
+                .join(" • ")}
+              {` • ${infoConso.total} asignado(s)`}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setConsolidador("todos")}
+          title="Quitar filtro de persona"
+          className="min-h-[40px] cursor-pointer rounded-full border border-navy/30 bg-white px-4 text-xs font-black tracking-wide text-navy uppercase hover:border-navy/60"
+        >
+          Quitar ✕
+        </button>
+      </div>
+    </section>
+  ) : null;
 
   function elegirTab(id: "todos" | "alDia" | "pendientes" | "sinAsignar") {
     setTab(id);
@@ -532,24 +629,30 @@ function Contenido() {
 
   if (sesion?.rol === "CONSOLIDADOR") {
     return (
-      <VistaConsolidador
-        key={estadoFiltro ?? "todos"}
-        lista={lista}
-        alertas={resumen?.alertas ?? []}
-        estadoInicial={estadoFiltro}
-        onCambio={recargar}
-      />
+      <>
+        {bannerConso}
+        <VistaConsolidador
+          key={estadoFiltro ?? "todos"}
+          lista={lista}
+          alertas={resumen?.alertas ?? []}
+          estadoInicial={estadoFiltro}
+          onCambio={recargar}
+        />
+      </>
     );
   }
 
   if (sesion?.rol === "LIDER_GRUPO" || sesion?.rol === "LIDER_RED") {
     return (
-      <VistaLiderGrupo
-        lista={lista}
-        alertas={resumen?.alertas ?? []}
-        estadoInicial={estadoFiltro}
-        esLiderRed={sesion.rol === "LIDER_RED"}
-      />
+      <>
+        {bannerConso}
+        <VistaLiderGrupo
+          lista={lista}
+          alertas={resumen?.alertas ?? []}
+          estadoInicial={estadoFiltro}
+          esLiderRed={sesion.rol === "LIDER_RED"}
+        />
+      </>
     );
   }
 
@@ -581,7 +684,9 @@ function Contenido() {
   const pendientes = lista.length - alDia;
 
   return (
-    <section className="rounded-2xl border border-sand/60 bg-white p-4">      <div className="flex flex-wrap items-center justify-between gap-3">
+    <>
+      {bannerConso}
+      <section className="rounded-2xl border border-sand/60 bg-white p-4">      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy text-white">
             <Icono className="h-5 w-5">{I.visitantes}</Icono>
@@ -873,6 +978,7 @@ function Contenido() {
         )}
       </div>
     </section>
+    </>
   );
 }
 
