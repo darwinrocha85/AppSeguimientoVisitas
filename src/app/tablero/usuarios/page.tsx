@@ -422,8 +422,8 @@ export default function Usuarios() {
             </h2>
             <p className="text-xs text-zinc-500">
               {esSuper
-                ? "Crear, editar y desactivar. Clic en el nombre para ver su perfil."
-                : "Primero crea la red y el grupo en la ficha de la iglesia; después creas aquí su líder o consolidador."}
+                ? "Clic en el nombre para ver su perfil o editarlo."
+                : "Clic en el nombre para editar sus datos y rol (según tu permiso) o ver su perfil."}
             </p>
           </div>
         </div>
@@ -558,8 +558,17 @@ export default function Usuarios() {
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setPerfil(u)}
-                      title="Ver perfil y afiliaciones"
+                      onClick={() => {
+                        // El nombre edita directo si hay permiso; si no, abre
+                        // el perfil de solo lectura.
+                        if (puedeEditar(u)) {
+                          if (editandoId === u.id) setEditandoId(null);
+                          else abrirEdicion(u);
+                        } else {
+                          setPerfil(u);
+                        }
+                      }}
+                      title={puedeEditar(u) ? "Editar datos y rol" : "Ver perfil y afiliaciones"}
                       className="cursor-pointer text-left text-[14px] font-bold text-navy underline-offset-2 hover:underline"
                     >
                       {u.nombre} {u.apellido}
@@ -626,6 +635,12 @@ export default function Usuarios() {
                         className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
                       >
                         {editandoId === u.id ? "Cerrar" : "Editar"}
+                      </button>
+                      <button
+                        onClick={() => setPerfil(u)}
+                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 underline-offset-2 hover:underline"
+                      >
+                        Perfil
                       </button>
                       <button
                         onClick={() => eliminar(u)}
@@ -797,6 +812,20 @@ export default function Usuarios() {
               </div>
             )}
           </dl>
+          {puedeEditar(perfil) && (
+            <button
+              onClick={() => {
+                const id = perfil.id;
+                setPerfil(null);
+                const u = usuarios.find((x) => x.id === id);
+                if (u) abrirEdicion(u);
+                else setEditandoId(id);
+              }}
+              className="mt-4 min-h-[44px] w-full cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-navy-dark"
+            >
+              Editar datos y rol
+            </button>
+          )}
         </Modal>
       )}
     </section>
