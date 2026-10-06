@@ -527,11 +527,18 @@ function Contenido() {
     await recargar();
   }
 
-  // Opciones del panel Asignar: nivel iglesia (sin grupo) vale para todo.
+  // Opciones del panel Asignar en cascada: red → grupo (solo de esa
+  // red) → consolidador (solo de ese grupo). Nivel iglesia (sin grupo)
+  // vale en cualquier grupo.
+  const gruposAsignar = aRed
+    ? (fGrupos as (Opcion & { redId: string })[]).filter(
+        (g) => g.redId === aRed
+      )
+    : [];
   const asignarRasos = fRasos.filter((r) => {
     if (aGrupo) return r.grupoId === aGrupo || !r.grupoId;
     if (aRed) {
-      const deLaRed = new Set(fGrupos.map((g) => g.id));
+      const deLaRed = new Set(gruposAsignar.map((g) => g.id));
       return (r.grupoId !== null && deLaRed.has(r.grupoId)) || !r.grupoId;
     }
     return true;
@@ -901,14 +908,14 @@ function Contenido() {
                           <option key={r.id} value={r.id}>{r.nombre}</option>
                         ))}
                       </select>
-                      <select aria-label="Grupo asignado" className={`${campo} cursor-pointer`} value={aGrupo} onChange={(e) => { setAGrupo(e.target.value); setAConso(""); }}>
-                        <option value="">Grupo…</option>
-                        {fGrupos.map((g) => (
+                      <select aria-label="Grupo asignado" className={`${campo} cursor-pointer`} value={aGrupo} disabled={!aRed} title={!aRed ? "Elige primero la red" : undefined} onChange={(e) => { setAGrupo(e.target.value); setAConso(""); }}>
+                        <option value="">{aRed ? "Grupo…" : "Grupo (elige red)…"}</option>
+                        {gruposAsignar.map((g) => (
                           <option key={g.id} value={g.id}>{g.nombre}</option>
                         ))}
                       </select>
-                      <select aria-label="Consolidador asignado" className={`${campo} cursor-pointer`} value={aConso} onChange={(e) => setAConso(e.target.value)}>
-                        <option value="">Consolidador…</option>
+                      <select aria-label="Consolidador asignado" className={`${campo} cursor-pointer`} value={aConso} disabled={!aGrupo} title={!aGrupo ? "Elige primero el grupo" : undefined} onChange={(e) => setAConso(e.target.value)}>
+                        <option value="">{aGrupo ? "Consolidador…" : "Consolidador (elige grupo)…"}</option>
                         {asignarRasos.map((r) => (
                           <option key={r.id} value={r.id}>{r.nombre} {r.apellido}{etiquetaRol(r.rol)}</option>
                         ))}

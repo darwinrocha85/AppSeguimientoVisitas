@@ -834,12 +834,22 @@ export default function Usuarios() {
               )}
             </>
           )}
-          <div className="md:col-span-3">
+          <div className="md:col-span-3 flex gap-2">
             <button
               disabled={guardando}
-              className="min-h-[44px] w-full cursor-pointer rounded-xl bg-wine px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-[#8A1830] disabled:opacity-60"
+              className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-wine px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-[#8A1830] disabled:opacity-60"
             >
               {guardando ? "Creando…" : "Crear"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreando(false);
+                setError("");
+              }}
+              className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-6 text-sm font-bold text-navy hover:border-navy/30"
+            >
+              Cancelar
             </button>
           </div>
         </form>
