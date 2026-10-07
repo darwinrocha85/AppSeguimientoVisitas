@@ -21,6 +21,7 @@ const Esquema = z.object({
   redId: z.string().nullable().optional(),
   grupoId: z.string().nullable().optional(),
   consolidadorId: z.string().nullable().optional(),
+  sinContacto: z.boolean().optional(),
 });
 
 async function enAlcance(
@@ -121,6 +122,7 @@ export async function PUT(
       ...(d.consolidadorId !== undefined
         ? { consolidadorId: d.consolidadorId }
         : {}),
+      ...(d.sinContacto !== undefined ? { sinContacto: d.sinContacto } : {}),
     },
   });
   return NextResponse.json({ id: actualizado.id });

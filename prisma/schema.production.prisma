@@ -134,6 +134,9 @@ model Visitante {
   observaciones   String?
   estadoActual    EstadoVisitante  @default(DESEA_SER_CONTACTADO)
   activo          Boolean            @default(true)
+  // Sin consentimiento de comunicaciones/WhatsApp (ficha primera visita):
+  // se anota y queda excluido de mensajes automaticos y grupos.
+  sinContacto     Boolean            @default(false)
   iglesiaId       String
   iglesia         Iglesia          @relation(fields: [iglesiaId], references: [id], onDelete: Cascade)
   redId           String?

@@ -38,6 +38,34 @@ type Origen = { id: string; nombre: string };
 type Opcion = { id: string; nombre: string };
 type Raso = { id: string; nombre: string; apellido: string; grupoId: string | null; redId?: string | null; rol?: string };
 
+// Punto medio del rango de edad de la ficha de primera visita.
+const EDAD_MEDIA: Record<string, string> = {
+  "14-18": "16",
+  "18-26": "22",
+  "26-40": "33",
+  "40-50": "45",
+  "50-60": "55",
+  "60+": "65",
+};
+
+type Lectura = {
+  key: number;
+  nombre: string;
+  apellido: string;
+  zona: string;
+  telefono: string;
+  edad: string;
+  codigoPostal: string;
+  peticiones: string;
+  observaciones: string;
+  sinContacto: boolean;
+  redId: string;
+  grupoId: string;
+  consolidadorId: string;
+  confianza: number | null;
+  creada: boolean;
+};
+
 const INSIGNIA_ESTADO: Record<string, { texto: string; clases: string }> = {
   DESEA_SER_CONTACTADO: {
     texto: "Nuevo",
@@ -131,6 +159,15 @@ function Contenido() {
 
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(VACIO_FORM);
+  // Importar fichas (foto/PDF): solo pre-rellena, nunca guarda solo.
+  // Pueden ser varias por captura: cada lectura se revisa y crea aparte.
+  const [panelImp, setPanelImp] = useState(false);
+  const [archivosImp, setArchivosImp] = useState<File[]>([]);
+  const [iglesiaImp, setIglesiaImp] = useState("");
+  const [leyendo, setLeyendo] = useState("");
+  const [lecturas, setLecturas] = useState<Lectura[]>([]);
+  const [errorImp, setErrorImp] = useState("");
+  const [creandoImp, setCreandoImp] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -529,6 +566,166 @@ function Contenido() {
     await recargar();
   }
 
+  function abrirImportar() {
+    setPanelImp(!panelImp);
+    setErrorImp("");
+    // Iglesia por defecto: la del líder si es una sola; con más de una se
+    // exige elegir (se pregunta, no se adivina).
+    if (!panelImp && !iglesiaImp && iglesias.length === 1) {
+      setIglesiaImp(iglesias[0].id);
+      void cargarOpciones(iglesias[0].id, "");
+    }
+  }
+
+  function archivoAImagen(file: File): Promise<{ mime: string; base64: string }> {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 1600;
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * k);
+        c.height = Math.round(img.height * k);
+        c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        const data = c.toDataURL("image/jpeg", 0.85).split(",")[1] ?? "";
+        res({ mime: "image/jpeg", base64: data });
+      };
+      img.onerror = () => rej(new Error("imagen"));
+      img.src = url;
+    });
+  }
+
+  async function leerFichas() {
+    if (archivosImp.length === 0 || archivosImp.length > 5) {
+      setErrorImp("Elige de 1 a 5 fotos");
+      return;
+    }
+    if (!iglesiaImp) {
+      setErrorImp("Elige la iglesia de estos visitantes");
+      return;
+    }
+    setErrorImp("");
+    setLecturas([]);
+    // Rasteriza en el cliente (solo fotos).
+    setLeyendo("Preparando imágenes…");
+    const imgs: { mime: string; base64: string }[] = [];
+    try {
+      for (const f of archivosImp) {
+        if (f.type === "application/pdf") {
+          setErrorImp("Solo fotos (el PDF llegó por error y no se acepta)");
+          setLeyendo("");
+          return;
+        }
+        imgs.push(await archivoAImagen(f));
+      }
+    } catch {
+      setErrorImp("No se pudieron leer los archivos");
+      setLeyendo("");
+      return;
+    }
+    if (imgs.length === 0) {
+      setErrorImp("Sin páginas para leer");
+      setLeyendo("");
+      return;
+    }
+    // De a 3 por pedido (evita tiempos largos en el servidor).
+    const todas: Record<string, unknown>[] = [];
+    try {
+      for (let i = 0; i < imgs.length; i += 3) {
+        setLeyendo(`Leyendo ${Math.min(i + 3, imgs.length)}/${imgs.length}…`);
+        const r = await fetch("/api/visitantes/importar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imagenes: imgs.slice(i, i + 3) }),
+        });
+        const j = await r.json().catch(() => null);
+        if (!r.ok) {
+          setErrorImp(j?.error ?? "No se pudo leer");
+          setLeyendo("");
+          return;
+        }
+        todas.push(...((j?.lecturas ?? []) as Record<string, unknown>[]));
+      }
+    } finally {
+      setLeyendo("");
+    }
+    if (todas.length === 0) {
+      setErrorImp("No se detectó ninguna ficha completa");
+      return;
+    }
+    const str = (v: unknown) => (typeof v === "string" ? v : "");
+    setLecturas(
+      todas.map((l, idx) => {
+        const sin =
+          (l.aceptaComunicaciones as boolean | null) === false ||
+          (l.aceptaWhatsapp as boolean | null) === false;
+        return {
+          key: Date.now() + idx,
+          nombre: str(l.nombre),
+          apellido: str(l.apellido),
+          zona: str(l.zona),
+          telefono: (str(l.telefono) || "").replace(/\D/g, "").slice(-9),
+          edad: EDAD_MEDIA[str(l.rangoEdad)] ?? "",
+          codigoPostal: str(l.codigoPostal),
+          peticiones: Array.isArray(l.ayudas) ? (l.ayudas as string[]).join("; ") : "",
+          observaciones: sin ? "⛔ No acepta comunicaciones/WhatsApp (ficha). " : "",
+          sinContacto: sin,
+          redId: "",
+          grupoId: "",
+          consolidadorId: "",
+          confianza: typeof l.confianza === "number" ? l.confianza : null,
+          creada: false,
+        };
+      })
+    );
+    void cargarOpciones(iglesiaImp, "");
+  }
+
+  function setLectura(key: number, campo: string, valor: string | boolean) {
+    setLecturas((ls) => ls.map((l) => (l.key === key ? { ...l, [campo]: valor } : l)));
+  }
+
+  async function crearDesdeLectura(l: Lectura) {
+    if (!l.nombre || !l.apellido || !l.zona || !iglesiaImp) {
+      setErrorImp("Nombre, apellido, zona e iglesia son obligatorios");
+      return;
+    }
+    setErrorImp("");
+    setCreandoImp(true);
+    // Origen por defecto: 1ra visita iglesia (la ficha es de primera visita).
+    const origenDef = origenes.find((o) => o.nombre === "1ra visita iglesia")?.id ?? null;
+    const r = await fetch("/api/visitantes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre: l.nombre,
+        apellido: l.apellido,
+        zona: l.zona,
+        telefono: l.telefono || null,
+        edad: l.edad ? Number(l.edad) : null,
+        codigoPostal: l.codigoPostal || null,
+        peticiones: l.peticiones || null,
+        observaciones: l.observaciones || null,
+        origenId: origenDef,
+        iglesiaId: iglesiaImp,
+        redId: l.redId || null,
+        grupoId: l.grupoId || null,
+        consolidadorId: l.consolidadorId || null,
+        sinContacto: l.sinContacto,
+      }),
+    });
+    setCreandoImp(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setErrorImp(j?.error ?? "No se pudo crear");
+      return;
+    }
+    setLecturas((ls) => ls.map((x) => (x.key === l.key ? { ...x, creada: true } : x)));
+    await recargar();
+  }
+
   // Cascada del panel Asignar: red → grupo (solo de esa red) →
   // consolidador (solo de ese grupo).
   const gruposAsignar = aRed
@@ -751,10 +948,121 @@ function Contenido() {
               Nuevo
             </button>
           )}
+          {esGestorUi && (
+            <button
+              onClick={abrirImportar}
+              title="Leer fichas de primera visita (foto) y pre-rellenar"
+              className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border border-navy/30 bg-white px-5 text-sm font-black tracking-wide text-navy uppercase transition-all hover:bg-paper"
+            >
+              <Icono className="h-4 w-4">{I.mas}</Icono>
+              Importar
+            </button>
+          )}
         </div>
       </div>
 
       {esGestorUi && creando && bloqueForm(false)}
+
+      {esGestorUi && panelImp && (
+        <div className="mt-3 rounded-xl border border-sand/60 bg-paper p-3">
+          <p className="text-xs font-bold text-navy">
+            Importar fichas <span className="font-medium text-zinc-500">· foto obligatoria (máx 5) · solo pre-rellena, nada se guarda solo</span>
+          </p>
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+            <select aria-label="Iglesia de los importados" className={`${campo} cursor-pointer md:col-span-2`} value={iglesiaImp} required onChange={(e) => { setIglesiaImp(e.target.value); setLecturas([]); if (e.target.value) void cargarOpciones(e.target.value, ""); }}>
+              <option value="">{iglesias.length > 1 ? "Elige la iglesia*…" : "Iglesia*…"}</option>
+              {iglesias.map((ig) => (
+                <option key={ig.id} value={ig.id}>{ig.nombre}</option>
+              ))}
+            </select>
+            <label className={`${campo} flex cursor-pointer items-center justify-center gap-2 text-center`}>
+              <Icono className="h-4 w-4">{I.mas}</Icono>
+              {archivosImp.length > 0 ? `${archivosImp.length} foto(s)` : "Fotos (máx 5)…"}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => setArchivosImp(Array.from(e.target.files ?? []).slice(0, 5))}
+              />
+            </label>
+            <button
+              onClick={leerFichas}
+              disabled={!!leyendo}
+              className="min-h-[44px] cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase disabled:opacity-60"
+            >
+              {leyendo ? "Leyendo…" : "Leer"}
+            </button>
+          </div>
+          {leyendo && <p className="mt-2 text-xs font-semibold text-navy">{leyendo}</p>}
+          {errorImp && (
+            <p role="alert" className="mt-2 text-sm font-semibold text-wine">
+              {errorImp}
+            </p>
+          )}
+          {lecturas.length > 0 && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Revisa cada ficha, corrige lo mal leído y pulsa Crear. Lo dudoso viene vacío.
+            </p>
+          )}
+          <ul className="mt-2 space-y-2">
+            {lecturas.map((l) => (
+              <li key={l.key} className="grid grid-cols-1 gap-2 rounded-xl border border-sand bg-white p-3 md:grid-cols-3">
+                <p className="text-xs font-bold text-navy md:col-span-3">
+                  Ficha leída
+                  {l.confianza !== null && <span className="font-medium text-zinc-500"> · confianza {Math.round(l.confianza * 100)}%</span>}
+                  {l.creada && <span className="ml-2 rounded-full bg-[#1F7A4B]/10 px-2 py-0.5 text-[#1F7A4B]">Creado</span>}
+                </p>
+                {l.sinContacto && (
+                  <p role="alert" className="rounded-xl bg-wine px-3 py-2 text-center text-[12px] font-bold text-white md:col-span-3">
+                    ⛔ Sin consentimiento: no recibirá mensajes ni grupos
+                  </p>
+                )}
+                <input aria-label="Nombre" className={campo} placeholder="Nombre*" value={l.nombre} disabled={l.creada} onChange={(e) => setLectura(l.key, "nombre", e.target.value)} />
+                <input aria-label="Apellido" className={campo} placeholder="Apellido*" value={l.apellido} disabled={l.creada} onChange={(e) => setLectura(l.key, "apellido", e.target.value)} />
+                <input aria-label="Zona" className={campo} placeholder="Zona*" value={l.zona} disabled={l.creada} onChange={(e) => setLectura(l.key, "zona", e.target.value)} />
+                <input aria-label="Teléfono" className={campo} placeholder="Teléfono" inputMode="numeric" value={formatearTelefono(l.telefono)} disabled={l.creada} onChange={(e) => setLectura(l.key, "telefono", soloDigitos(e.target.value).slice(-9))} />
+                <input aria-label="Edad" className={campo} placeholder="Edad" inputMode="numeric" value={l.edad} disabled={l.creada} onChange={(e) => setLectura(l.key, "edad", e.target.value.replace(/\D/g, "").slice(0, 3))} />
+                <input aria-label="Código postal" className={campo} placeholder="Código postal" value={l.codigoPostal} disabled={l.creada} onChange={(e) => setLectura(l.key, "codigoPostal", e.target.value)} />
+                <select aria-label="Red" className={`${campo} cursor-pointer`} value={l.redId} disabled={l.creada} onChange={(e) => { setLectura(l.key, "redId", e.target.value); setLectura(l.key, "grupoId", ""); setLectura(l.key, "consolidadorId", ""); void cargarOpciones(iglesiaImp, e.target.value); }}>
+                  <option value="">Red…</option>
+                  {fRedes.map((r) => (
+                    <option key={r.id} value={r.id}>{r.nombre}</option>
+                  ))}
+                </select>
+                <select aria-label="Grupo" className={`${campo} cursor-pointer`} value={l.grupoId} disabled={l.creada} onChange={(e) => { setLectura(l.key, "grupoId", e.target.value); setLectura(l.key, "consolidadorId", ""); }}>
+                  <option value="">Grupo…</option>
+                  {fGrupos.map((g) => (
+                    <option key={g.id} value={g.id}>{g.nombre}</option>
+                  ))}
+                </select>
+                <select aria-label="Consolidador" className={`${campo} cursor-pointer`} value={l.consolidadorId} disabled={l.creada} onChange={(e) => setLectura(l.key, "consolidadorId", e.target.value)}>
+                  <option value="">Consolidador…</option>
+                  {rasosFiltrados.map((r) => (
+                    <option key={r.id} value={r.id}>{r.nombre} {r.apellido}{etiquetaRol(r.rol)}</option>
+                  ))}
+                </select>
+                <input aria-label="Peticiones" className={`${campo} md:col-span-2`} placeholder="Peticiones" value={l.peticiones} disabled={l.creada} onChange={(e) => setLectura(l.key, "peticiones", e.target.value)} />
+                <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-semibold text-navy">
+                  <input type="checkbox" checked={l.sinContacto} disabled={l.creada} onChange={(e) => setLectura(l.key, "sinContacto", e.target.checked)} className="h-5 w-5 accent-[#A91E32]" />
+                  Sin contacto
+                </label>
+                <input aria-label="Observaciones" className={`${campo} md:col-span-3`} placeholder="Observaciones" value={l.observaciones} disabled={l.creada} onChange={(e) => setLectura(l.key, "observaciones", e.target.value)} />
+                {!l.creada && (
+                  <div className="flex gap-2 md:col-span-3">
+                    <button onClick={() => crearDesdeLectura(l)} disabled={creandoImp} className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase disabled:opacity-60">
+                      {creandoImp ? "Creando…" : "Crear visitante"}
+                    </button>
+                    <button onClick={() => setLecturas((ls) => ls.filter((x) => x.key !== l.key))} className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-4 text-sm font-bold text-navy">
+                      Descartar
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filtrar visitantes">

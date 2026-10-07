@@ -193,6 +193,7 @@ const EsquemaCrear = z.object({
   redId: z.string().nullable().optional(),
   grupoId: z.string().nullable().optional(),
   consolidadorId: z.string().nullable().optional(),
+  sinContacto: z.boolean().optional(),
 });
 
 async function validarUbicacion(
@@ -289,6 +290,7 @@ export async function POST(req: Request) {
       redId: d.redId ?? null,
       grupoId: d.grupoId ?? null,
       consolidadorId: d.consolidadorId ?? null,
+      sinContacto: d.sinContacto ?? false,
       estadoActual: "DESEA_SER_CONTACTADO",
       historial: {
         create: {

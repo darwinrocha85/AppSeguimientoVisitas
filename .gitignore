@@ -37,6 +37,10 @@ yarn-error.log*
 # sqlite local (nunca commitear la base de datos)
 *.db
 *.db-journal
+*.db.respaldo-*
+# planillas escaneadas con datos reales (nunca commitear)
+pdf_data_dev/
+pdf_data_test/
 
 # vercel
 .vercel
