@@ -273,6 +273,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
   }
 
+  // El teléfono identifica a la persona: no se guarda dos veces
+  // (global, entre activos; sin teléfono se permite).
+  if (d.telefono) {
+    const tel = d.telefono.replace(/\D/g, "");
+    const dup = await db.visitante.findFirst({
+      where: { telefono: tel, activo: true },
+      select: { id: true, nombre: true, apellido: true },
+    });
+    if (dup)
+      return NextResponse.json(
+        { error: `Ya existe ${dup.nombre} ${dup.apellido} con ese teléfono` },
+        { status: 409 }
+      );
+  }
+
   const creado = await db.visitante.create({
     data: {
       nombre: d.nombre,

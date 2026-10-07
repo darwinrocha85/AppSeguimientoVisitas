@@ -688,9 +688,24 @@ function Contenido() {
   }
 
   async function crearDesdeLectura(l: Lectura) {
+    if (l.creada) return;
     if (!l.nombre || !l.apellido || !l.zona || !iglesiaImp) {
       setErrorImp("Nombre, apellido, zona e iglesia son obligatorios");
       return;
+    }
+    // Mismo teléfono no se guarda dos veces: avisa antes de pedir al servidor.
+    const tel = (l.telefono || "").replace(/\D/g, "");
+    if (tel) {
+      const enLista = lista.find((v) => (v.telefono ?? "").replace(/\D/g, "") === tel);
+      if (enLista) {
+        setErrorImp(`Ya existe ${enLista.nombre} ${enLista.apellido} con ese teléfono`);
+        return;
+      }
+      const enLote = lecturas.find((x) => x.key !== l.key && (x.telefono || "").replace(/\D/g, "") === tel);
+      if (enLote) {
+        setErrorImp(`Ese teléfono ya está en otra ficha del lote (${enLote.nombre} ${enLote.apellido})`);
+        return;
+      }
     }
     setErrorImp("");
     setCreandoImp(true);
