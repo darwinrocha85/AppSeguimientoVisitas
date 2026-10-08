@@ -44,8 +44,10 @@ export const SIN_CONSOLIDADOR_SEGUNDO = {
   consolidadorId: null,
 } as const;
 
-/** Unión para la bandeja y tarjeta únicas de "No asignados". */
+/** Unión para la bandeja y tarjeta únicas de "No asignados". Quien dijo
+ * No a WhatsApp no cuenta para asignar: tiene su propia tarjeta y tab. */
 export const NECESITA_ASIGNACION: Prisma.VisitanteWhereInput = {
+  sinContacto: false,
   OR: [
     { redId: null, grupoId: null, consolidadorId: null },
     { estadoActual: "PRIMER_CONTACTO", consolidadorId: null },

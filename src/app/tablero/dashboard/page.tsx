@@ -173,7 +173,7 @@ export default function Dashboard() {
           </span>
         </Link>
       )}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {ESTADOS.map((e) => (
           <TarjetaEstado
             key={e.clave}
@@ -185,6 +185,14 @@ export default function Dashboard() {
             href={`/tablero/visitantes?estado=${e.clave}`}
           />
         ))}
+        <TarjetaEstado
+          icono={I.silencio}
+          titulo="No contactar"
+          valor={resumen?.noContactar ?? 0}
+          pie="Dijeron que no"
+          tinta="bg-wine/10 text-wine"
+          href="/tablero/visitantes?sinContacto=1"
+        />
       </div>
 
       {sesion?.rol !== "CONSOLIDADOR" && sesion?.rol !== "LIDER_GRUPO" && sesion?.rol !== "LIDER_RED" && (

@@ -51,9 +51,12 @@ export async function GET(req: Request) {
   // (p. ej. mensaje masivo) y el 2do lo hace el consolidador. Por eso las
   // tarjetas cuentan TODOS los del alcance, asignados o no; con filtro de
   // red/grupo/consolidador solo cuentan los de ese nivel.
+  // Las 4 tarjetas de etapa cuentan contactables; quien dijo No va a su
+  // propia tarjeta "No contactar" (conserva su estado como constancia).
   const whereV: Record<string, unknown> = {
     ...baseV,
     activo: true,
+    sinContacto: false,
     ...(rg.redId ? { redId: rg.redId } : {}),
     ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
     ...(conId ? { consolidadorId: conId } : {}),
@@ -62,7 +65,7 @@ export async function GET(req: Request) {
   // Conteo del tab de no asignados (alcance de iglesias, sin filtros de
   // red/grupo/consolidador). Solo gestores: nunca filtrar afiliaciones a líderes.
   const puedeVer = veNoAsignados(s);
-  const [porEstado, porIglesia, porRed, porGrupo, porConso, total, noAsignados] =
+  const [porEstado, porIglesia, porRed, porGrupo, porConso, total, noAsignados, noContactar] =
     await Promise.all([
       db.visitante.groupBy({ by: ["estadoActual"], where: whereV, _count: true }),
       db.visitante.groupBy({ by: ["iglesiaId"], where: whereV, _count: true }),
@@ -83,6 +86,9 @@ export async function GET(req: Request) {
             },
           })
         : Promise.resolve(0),
+      db.visitante.count({
+        where: { ...whereV, sinContacto: true },
+      }),
     ]);
 
   const iglesias =
@@ -165,6 +171,7 @@ export async function GET(req: Request) {
     alcance: "actual",
     total,
     noAsignados,
+    noContactar,
     porEstado: estados,
     porIglesia: porIglesia.map((p) => ({
       iglesiaId: p.iglesiaId,

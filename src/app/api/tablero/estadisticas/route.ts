@@ -14,6 +14,7 @@ const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
  * Estadísticas por RANGO usando fecha_cambio_estado (regla acordada):
  * un visitante cuenta UNA vez, en el estado de su ÚLTIMO cambio,
  * solo si ese cambio cae dentro de [inicio, fin].
+ * Solo contactables: quien dijo No va a su tarjeta propia.
  * Supuesto documentado: el desglose por red/grupo usa la red y el grupo
  * ACTUALES del visitante (el historial no guarda red/grupo por cambio).
  */
@@ -64,6 +65,10 @@ export async function GET(req: Request) {
   const alcance: Record<string, unknown> = {
     ...base,
     activo: true,
+    // Las tarjetas de etapa cuentan contactables; quien dijo No va a su
+    // tarjeta propia (conserva su estado como constancia) y no entra en
+    // total ni % éxito.
+    sinContacto: false,
     ...(rg.redId ? { redId: rg.redId } : {}),
     ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
     ...(conId ? { consolidadorId: conId } : {}),
@@ -187,11 +192,27 @@ export async function GET(req: Request) {
   const enRangoIds = new Set(enRango.map(([id]) => id));
   const exito = [...conAvance].filter((id) => enRangoIds.has(id)).length;
 
+  // Tarjeta "No contactar": último cambio en rango de quienes dijeron No
+  // (conservan su etapa como constancia; no entran en total ni éxito).
+  const histNo = await db.visitanteHistorial.findMany({
+    where: { visitante: { ...alcance, sinContacto: true } },
+    select: { visitanteId: true, fechaCambio: true },
+  });
+  const ultimoNo = new Map<string, Date>();
+  for (const h of histNo) {
+    const p = ultimoNo.get(h.visitanteId);
+    if (!p || h.fechaCambio > p) ultimoNo.set(h.visitanteId, h.fechaCambio);
+  }
+  const noContactar = [...ultimoNo.values()].filter(
+    (f) => f >= desde && f <= hasta
+  ).length;
+
   return NextResponse.json({
     total,
     porEstado,
     porRed,
     porGrupo,
+    noContactar,
     consolidados,
     conAvance: exito,
     exitoPct: total > 0 ? Math.round((exito / total) * 100) : 0,

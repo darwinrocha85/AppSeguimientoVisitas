@@ -8,6 +8,7 @@ type Periodo = "UltimoMes" | "Semanal" | "Mensual" | "Personalizado";
 type Stats = {
   total: number;
   porEstado: Record<string, number>;
+  noContactar: number;
   porRed: { id: string; nombre: string; total: number }[];
   porGrupo: { id: string; nombre: string; total: number }[];
   consolidados: number;
@@ -398,7 +399,7 @@ export default function Reportes() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {ESTADOS.map((e) => (
           <TarjetaEstado
             key={e.clave}
@@ -410,6 +411,14 @@ export default function Reportes() {
             href={`/tablero/visitantes?estado=${e.clave}`}
           />
         ))}
+        <TarjetaEstado
+          icono={I.silencio}
+          titulo="No contactar"
+          valor={stats?.noContactar ?? "…"}
+          pie="Dijeron que no"
+          tinta="bg-wine/10 text-wine"
+          href="/tablero/visitantes?sinContacto=1"
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

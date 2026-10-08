@@ -155,7 +155,7 @@ function Contenido() {
   const [busqueda, setBusqueda] = useState("");
   const [tab, setTab] = useState<
     "todos" | "alDia" | "pendientes" | "sinAsignar" | "sincontacto"
-  >(qp.get("sinAsignar") === "1" ? "sinAsignar" : "todos");
+  >(qp.get("sinContacto") === "1" ? "sincontacto" : qp.get("sinAsignar") === "1" ? "sinAsignar" : "todos");
   const [ahora] = useState(() => Date.now());
   const [lista, setLista] = useState<Visitante[]>([]);
   const [cargando, setCargando] = useState(true);

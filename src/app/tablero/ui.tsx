@@ -52,6 +52,7 @@ export type Resumen = {
   alcance: string;
   total: number;
   noAsignados: number;
+  noContactar: number;
   porEstado: Record<string, number>;
   porIglesia: { iglesiaId: string; nombre: string; total: number }[];
   redes: { id: string; nombre: string; iglesiaId: string; total: number }[];
@@ -168,6 +169,13 @@ export const I = {
     </>
   ),
   mas: <path d="M12 5v14M5 12h14" />,
+  silencio: (
+    <>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="22" x2="16" y1="9" y2="15" />
+      <line x1="16" x2="22" y1="9" y2="15" />
+    </>
+  ),
   iglesia: (
     <>
       <path d="M3 21h18" />

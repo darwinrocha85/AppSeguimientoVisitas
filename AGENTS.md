@@ -78,4 +78,4 @@
 - **Dirección del cambio:** desde el usuario se cambia iglesia; desde la iglesia no se cambian usuarios (solo lectura + desactivar roles bajos).
 - **Diseño:** solo el lenguaje visual de `images_test` y del sitio de referencia (paleta navy #204B6E, dorado #C9A227, vino #A91E32); no clonar contenido.
 - **Etapas vigentes:** Desea = nuevo sin escribir; 1er contacto = escrito desde la iglesia SIN asignar (p. ej. mensaje masivo); 2do = lo hace el consolidador raso asignado; Visita = tras el 2do, también del raso. Tarjetas y estadísticas cuentan asignados y no asignados del alcance.
-- **No contactar:** tab “Sin contacto” (pastor/líder consolidador); el líder consolidador y el consolidador raso pueden marcarlo (el raso, en sus asignados).
+- **No contactar:** tarjeta propia + tab “Sin contacto” (pastor/líder consolidador); las tarjetas de etapa cuentan solo contactables. Camilo (1er contacto y luego No) y Erika (No desde la ficha) van ahí conservando su etapa. El líder consolidador y el consolidador raso pueden marcarlo (el raso, en sus asignados).
