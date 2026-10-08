@@ -7,7 +7,6 @@
  * Sin --confirmado es simulacro.
  */
 import fs from "node:fs";
-import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(`${process.cwd()}/package.json`);

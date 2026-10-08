@@ -78,8 +78,8 @@ export async function GET(req: Request) {
       consolidador: { select: { nombre: true, apellido: true } },
       iglesia: { select: { nombre: true } },
     },
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
+    take: 200,
   });
   // Unión con no asignados (evita duplicados: 1er contacto con red pero
   // sin consolidador sale en ambas).
@@ -92,17 +92,24 @@ export async function GET(req: Request) {
         consolidador: { select: { nombre: true, apellido: true } },
         iglesia: { select: { nombre: true } },
       },
-      orderBy: { createdAt: "desc" },
-      take: 100,
+      orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
+      take: 200,
     });
     const vistos = new Set(listaBase.map((v) => v.id));
     listaJunta = [
       ...listaBase,
       ...sin.filter((v) => !vistos.has(v.id)),
-    ]
-      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
-      .slice(0, 100);
+    ];
   }
+  // Orden alfabético estable en español (SQLite ordena por bytes y
+  // descuadra acentos/mayúsculas): así editar o guardar no mueve a nadie.
+  listaJunta = [...listaJunta]
+    .sort((a, b) =>
+      `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`, "es", {
+        sensitivity: "base",
+      })
+    )
+    .slice(0, 100);
 
   // SQLite compara texto con mayúsculas/acentos estrictos: filtramos aquí
   // sin distinguir mayúsculas ni acentos (nombres en español).
