@@ -948,7 +948,7 @@ function Contenido() {
               {soloSinAsignar
                 ? "No asignados"
                 : soloSinContacto
-                  ? "Sin contacto"
+                  ? "No contactar"
                   : "Visitantes"}{" "}
               • {listaFiltrada.length}
             </h2>
@@ -1136,7 +1136,7 @@ function Contenido() {
               ...(veTabSinAsignar
                 ? [
                     { id: "sinAsignar", texto: "No asignados" } as const,
-                    { id: "sincontacto", texto: "Sin contacto" } as const,
+                    { id: "sincontacto", texto: "No contactar" } as const,
                   ]
                 : []),
             ] as const
