@@ -43,17 +43,25 @@ export async function GET(req: Request) {
   if (sinAsignar && !veNoAsignados(s)) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
+  // Tab Sin contacto (gestores): quienes dijeron No a WhatsApp.
+  const soloSin = url.searchParams.get("sinContacto") === "1";
+  if (soloSin && !veNoAsignados(s)) {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  }
   const alcance: Record<string, unknown> = sinAsignar
     ? { ...base, activo: true, ...NECESITA_ASIGNACION }
-    : { ...base, activo: true, ...ASIGNADO };
+    : soloSin
+      ? { ...base, activo: true, sinContacto: true }
+      : { ...base, activo: true, ...ASIGNADO };
   // Tab Todos (gestores): incluye asignados y no asignados. Los no
   // asignados van con alcance de iglesia (ignoran red/grupo/consolidador,
   // como su tab) y nunca fuera del permiso de verlos.
   const todos =
     !sinAsignar &&
+    !soloSin &&
     url.searchParams.get("todos") === "1" &&
     veNoAsignados(s);
-  if (!sinAsignar) {
+  if (!sinAsignar && !soloSin) {
     const rg = await validarRedGrupo(
       s,
       ids,
@@ -129,7 +137,7 @@ export async function GET(req: Request) {
 
   const redIds = [...new Set(lista.map((v) => v.redId).filter(Boolean))];
   const grupoIds = [...new Set(lista.map((v) => v.grupoId).filter(Boolean))];
-  const [redes, grupos, cambios] = await Promise.all([
+  const [redes, grupos, cambios, reporte] = await Promise.all([
     redIds.length > 0
       ? await db.red.findMany({ where: { id: { in: redIds as string[] } } })
       : [],
@@ -145,7 +153,29 @@ export async function GET(req: Request) {
           _max: { fechaCambio: true },
         })
       : [],
+    // Historial para el detalle (últimos reportes con fecha de contacto).
+    lista.length > 0
+      ? await db.visitanteHistorial.findMany({
+          where: { visitanteId: { in: lista.map((v) => v.id) } },
+          select: {
+            visitanteId: true,
+            deEstado: true,
+            aEstado: true,
+            fechaCambio: true,
+            fechaContacto: true,
+            observaciones: true,
+          },
+          orderBy: { fechaCambio: "desc" },
+          take: 400,
+        })
+      : [],
   ]);
+  const porHistorial = new Map<string, typeof reporte>();
+  for (const h of reporte) {
+    const l = porHistorial.get(h.visitanteId) ?? [];
+    if (l.length < 10) l.push(h);
+    porHistorial.set(h.visitanteId, l);
+  }
   const nombreRed = Object.fromEntries(redes.map((r) => [r.id, r.nombre]));
   const nombreGrupo = Object.fromEntries(grupos.map((g) => [g.id, g.nombre]));
   const ultimoCambio = Object.fromEntries(
@@ -181,6 +211,7 @@ export async function GET(req: Request) {
         : null,
       fechaRegistro: v.createdAt,
       ultimoCambio: ultimoCambio[v.id] ?? v.createdAt,
+      historial: porHistorial.get(v.id) ?? [],
     }))
   );
 }

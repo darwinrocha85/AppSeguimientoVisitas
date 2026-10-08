@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ETIQUETA_ROL, I, Icono, Vacio, useTablero } from "../ui";
 import { formatearTelefono, soloDigitos, enlaceLlamar, enlaceWhatsApp } from "@/lib/telefono";
 import { VistaConsolidador } from "./vista-consolidador";
+import { DetalleVisitante, type HistorialEntrada } from "./detalle";
 
 type Visitante = {
   id: string;
@@ -33,6 +34,7 @@ type Visitante = {
   consolidador: string | null;
   fechaRegistro: string;
   ultimoCambio: string;
+  historial: HistorialEntrada[];
 };
 
 type Origen = { id: string; nombre: string };
@@ -152,7 +154,7 @@ function Contenido() {
 
   const [busqueda, setBusqueda] = useState("");
   const [tab, setTab] = useState<
-    "todos" | "alDia" | "pendientes" | "sinAsignar"
+    "todos" | "alDia" | "pendientes" | "sinAsignar" | "sincontacto"
   >(qp.get("sinAsignar") === "1" ? "sinAsignar" : "todos");
   const [ahora] = useState(() => Date.now());
   const [lista, setLista] = useState<Visitante[]>([]);
@@ -171,6 +173,7 @@ function Contenido() {
   const [errorImp, setErrorImp] = useState("");
   const [creandoImp, setCreandoImp] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [detalleId, setDetalleId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -194,12 +197,15 @@ function Contenido() {
   const [fOrigenes, setFOrigenes] = useState<Origen[]>([]);
 
   const soloSinAsignar = tab === "sinAsignar";
+  const soloSinContacto = tab === "sincontacto";
 
   async function recargar() {
     const qs = new URLSearchParams();
     if (iglesiaId) qs.set("iglesiaId", iglesiaId);
     if (soloSinAsignar) {
       qs.set("sinAsignar", "1");
+    } else if (soloSinContacto) {
+      qs.set("sinContacto", "1");
     } else {
       // El tab Todos une asignados y no asignados.
       if (tab === "todos") qs.set("todos", "1");
@@ -224,7 +230,7 @@ function Contenido() {
   /* eslint-disable react-hooks/set-state-in-effect -- enlace profundo desde Equipo/Usuarios */
   useEffect(() => {
     if (!paramConso || paramAplicado || !resumen || !sesion) return;
-    if (tab === "sinAsignar") return;
+    if (tab === "sinAsignar" || tab === "sincontacto") return;
     const c = (resumen.consolidadores ?? []).find((x) => x.id === paramConso);
     if (!c) return;
     if (sesion.rol === "CONSOLIDADOR") {
@@ -312,10 +318,10 @@ function Contenido() {
     </section>
   ) : null;
 
-  function elegirTab(id: "todos" | "alDia" | "pendientes" | "sinAsignar") {
+  function elegirTab(id: "todos" | "alDia" | "pendientes" | "sinAsignar" | "sincontacto") {
     setTab(id);
-    if (id === "sinAsignar") {
-      // El tab ignora la cascada: se vuelve a "todas/todos".
+    if (id === "sinAsignar" || id === "sincontacto") {
+      // Estos tabs ignoran la cascada: se vuelve a "todas/todos".
       setRed("todas");
       setGrupo("todos");
       setConsolidador("todos");
@@ -939,13 +945,19 @@ function Contenido() {
           </span>
           <div className="leading-tight">
             <h2 className="text-[15px] font-black text-navy">
-              {soloSinAsignar ? "No asignados" : "Visitantes"} •{" "}
-              {listaFiltrada.length}
+              {soloSinAsignar
+                ? "No asignados"
+                : soloSinContacto
+                  ? "Sin contacto"
+                  : "Visitantes"}{" "}
+              • {listaFiltrada.length}
             </h2>
             <p className="text-xs text-zinc-500">
               {soloSinAsignar
                 ? "Solo iglesia por asignar o 1er contacto sin consolidador · Reasigna con Asignar"
-                : `Iglesia: ${iglesia ? iglesia.nombre : "Todas"}`}
+                : soloSinContacto
+                  ? "Dijeron No a WhatsApp · Excluidos de mensajes"
+                  : `Iglesia: ${iglesia ? iglesia.nombre : "Todas"}`}
             </p>
           </div>
         </div>
@@ -1122,7 +1134,10 @@ function Contenido() {
               { id: "alDia", texto: "Al día" },
               { id: "pendientes", texto: "Pendientes" },
               ...(veTabSinAsignar
-                ? [{ id: "sinAsignar", texto: "No asignados" } as const]
+                ? [
+                    { id: "sinAsignar", texto: "No asignados" } as const,
+                    { id: "sincontacto", texto: "Sin contacto" } as const,
+                  ]
                 : []),
             ] as const
           ).map((p) => (
@@ -1293,8 +1308,17 @@ function Contenido() {
                           </button>
                         </span>
                       )}
+                      <button
+                        onClick={() =>
+                          setDetalleId(detalleId === v.id ? null : v.id)
+                        }
+                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                      >
+                        {detalleId === v.id ? "Ocultar" : "Detalle"}
+                      </button>
                     </span>
                   </div>
+                  {detalleId === v.id && <DetalleVisitante v={v} />}
                   {esGestorUi && editandoId === v.id && bloqueForm(true, v.id)}
                   {esGestorUi && asignandoId === v.id && (
                     <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-white p-3 md:grid-cols-4">
@@ -1404,6 +1428,7 @@ function VistaLiderGrupo({
 }) {
   const [estado, setEstado] = useState<string | null>(estadoInicial);
   const [filtro, setFiltro] = useState<"todos" | "pendientes" | "alDia">("todos");
+  const [detalleId, setDetalleId] = useState<string | null>(null);
   const [ahora] = useState(() => Date.now());
 
   function horasDesde(iso: string) {
@@ -1598,8 +1623,17 @@ function VistaLiderGrupo({
                           {v.sinContacto ? "Sin WhatsApp ⛔" : "WhatsApp"}
                         </span>
                       )}
+                      <button
+                        onClick={() =>
+                          setDetalleId(detalleId === v.id ? null : v.id)
+                        }
+                        className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                      >
+                        {detalleId === v.id ? "Ocultar" : "Detalle"}
+                      </button>
                     </span>
                   </div>
+                  {detalleId === v.id && <DetalleVisitante v={v} />}
                   {vencido && (
                     <p
                       role="alert"

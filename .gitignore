@@ -38,15 +38,16 @@ yarn-error.log*
 *.db
 *.db-journal
 *.db.respaldo-*
+# sesion de WhatsApp (credencial del movil de la iglesia, nunca commitear)
+wa-sesion/
+# registros de envios puntuales (contienen ids, solo local)
+envios-*.log
 # planillas escaneadas con datos reales (nunca commitear)
 pdf_data_dev/
 pdf_data_test/
 
 # vercel
 .vercel
-
-# notas locales de ejecución (contienen usuarios/claves demo, no publicar)
-run.md
 
 # typescript
 *.tsbuildinfo

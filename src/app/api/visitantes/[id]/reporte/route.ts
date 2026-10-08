@@ -13,9 +13,12 @@ const ORDEN = [
 ] as const;
 
 const Esquema = z.object({
-  aEstado: z.enum(ORDEN),
+  aEstado: z.enum(ORDEN).nullable().optional(),
   fechaContacto: z.string().min(1).nullable().optional(),
   observaciones: z.string().max(2000).nullable().optional(),
+  // Marcar No contactar (líder consolidador y consolidador raso pueden):
+  // cambia el flag sin tocar el estado.
+  sinContacto: z.boolean().optional(),
 });
 
 /**
@@ -55,17 +58,21 @@ export async function POST(
   const datos = Esquema.safeParse(await req.json().catch(() => null));
   if (!datos.success)
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
-  const { aEstado, observaciones } = datos.data;
+  const { aEstado, observaciones, sinContacto } = datos.data;
+  if ((aEstado === null || aEstado === undefined) && sinContacto === undefined)
+    return NextResponse.json({ error: "Nada que guardar" }, { status: 400 });
 
   const idxActual = ORDEN.indexOf(v.estadoActual as (typeof ORDEN)[number]);
-  const idxNuevo = ORDEN.indexOf(aEstado);
-  const esRepeticionVisita =
-    v.estadoActual === "VISITA_AMISTAD" && aEstado === "VISITA_AMISTAD";
-  if (!esRepeticionVisita && idxNuevo !== idxActual + 1)
-    return NextResponse.json(
-      { error: "El reporte debe avanzar un paso (sin saltos ni retrocesos)" },
-      { status: 400 }
-    );
+  if (aEstado !== null && aEstado !== undefined) {
+    const idxNuevo = ORDEN.indexOf(aEstado);
+    const esRepeticionVisita =
+      v.estadoActual === "VISITA_AMISTAD" && aEstado === "VISITA_AMISTAD";
+    if (!esRepeticionVisita && idxNuevo !== idxActual + 1)
+      return NextResponse.json(
+        { error: "El reporte debe avanzar un paso (sin saltos ni retrocesos)" },
+        { status: 400 }
+      );
+  }
 
   let fechaContacto: Date | null = null;
   if (datos.data.fechaContacto) {
@@ -86,18 +93,25 @@ export async function POST(
   const [actualizado] = await db.$transaction([
     db.visitante.update({
       where: { id },
-      data: { estadoActual: aEstado },
-    }),
-    db.visitanteHistorial.create({
       data: {
-        visitanteId: id,
-        deEstado: v.estadoActual,
-        aEstado,
-        fechaContacto,
-        cambiadoPorId: s.sub,
-        observaciones: observaciones || null,
+        ...(aEstado ? { estadoActual: aEstado } : {}),
+        ...(sinContacto !== undefined ? { sinContacto } : {}),
       },
     }),
+    ...(aEstado
+      ? [
+          db.visitanteHistorial.create({
+            data: {
+              visitanteId: id,
+              deEstado: v.estadoActual,
+              aEstado,
+              fechaContacto,
+              cambiadoPorId: s.sub,
+              observaciones: observaciones || null,
+            },
+          }),
+        ]
+      : []),
   ]);
   return NextResponse.json({ id: actualizado.id, estado: actualizado.estadoActual });
 }

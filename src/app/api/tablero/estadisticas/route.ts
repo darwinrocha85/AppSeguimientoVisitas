@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
-  ASIGNADO,
   filtroVisitantes,
   iglesiasDelAlcance,
   validarConsolidador,
@@ -65,7 +64,6 @@ export async function GET(req: Request) {
   const alcance: Record<string, unknown> = {
     ...base,
     activo: true,
-    ...ASIGNADO,
     ...(rg.redId ? { redId: rg.redId } : {}),
     ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
     ...(conId ? { consolidadorId: conId } : {}),

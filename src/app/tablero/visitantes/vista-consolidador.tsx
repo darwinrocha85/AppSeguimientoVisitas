@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { I, Icono, TarjetaEstado } from "../ui";
 import { formatearTelefono, enlaceLlamar, enlaceWhatsApp } from "@/lib/telefono";
+import { DetalleVisitante, type HistorialEntrada } from "./detalle";
 
 export type VisitanteRaso = {
   id: string;
@@ -19,6 +20,10 @@ export type VisitanteRaso = {
   grupo: string | null;
   fechaRegistro: string;
   ultimoCambio: string;
+  invitadoPor?: string | null;
+  peticiones?: string | null;
+  observaciones?: string | null;
+  historial?: HistorialEntrada[];
 };
 
 const TARJETAS = [
@@ -142,6 +147,23 @@ export function VistaConsolidador({
   }
 
   const reporteDe = reporteId ? lista.find((x) => x.id === reporteId) ?? null : null;
+  const [detalleId, setDetalleId] = useState<string | null>(null);
+  const [guardandoContacto, setGuardandoContacto] = useState(false);
+
+  /** El consolidador puede marcar No contactar a sus asignados (sin reporte). */
+  async function guardarContacto(v: VisitanteRaso, no: boolean) {
+    if (v.sinContacto === no) return;
+    setGuardandoContacto(true);
+    const r = await fetch(`/api/visitantes/${v.id}/reporte`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sinContacto: no }),
+    });
+    setGuardandoContacto(false);
+    if (!r.ok) return;
+    if (onCambio) onCambio();
+    else router.refresh();
+  }
 
   /** Estatus de la tarjeta: qué falta reportar (vencido) o qué va al día. */
   function estatus(v: VisitanteRaso): { texto: string; vencido: boolean } {
@@ -446,6 +468,31 @@ export function VistaConsolidador({
                       : "Llenar reporte"}
                 </button>
               </div>
+              <fieldset className="mt-2 flex min-h-[44px] items-center gap-4 rounded-xl border border-sand/60 bg-paper px-3">
+                <legend className="sr-only">¿Desea recibir comunicación por WhatsApp?</legend>
+                <span className="text-xs font-bold text-navy">¿Recibe WhatsApp?</span>
+                {(["SI", "NO"] as const).map((op) => (
+                  <label key={op} className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-navy">
+                    <input
+                      type="radio"
+                      name={`wa-raso-${v.id}`}
+                      value={op}
+                      checked={(v.sinContacto ? "NO" : "SI") === op}
+                      disabled={guardandoContacto}
+                      onChange={(e) => guardarContacto(v, e.target.value === "NO")}
+                      className="h-5 w-5 accent-[#204B6E]"
+                    />
+                    {op === "SI" ? "Sí" : "No"}
+                  </label>
+                ))}
+                <button
+                  onClick={() => setDetalleId(detalleId === v.id ? null : v.id)}
+                  className="ml-auto min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                >
+                  {detalleId === v.id ? "Ocultar" : "Detalle"}
+                </button>
+              </fieldset>
+              {detalleId === v.id && <DetalleVisitante v={v} />}
               {vencido && (
                 <p
                   role="alert"

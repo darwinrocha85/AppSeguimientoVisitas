@@ -10,8 +10,10 @@ export function esGestor(s: Sesion | null) {
 /**
  * Asignado = tiene red, grupo o consolidador (al menos uno).
  * No asignado = solo iglesia (sin red, sin grupo y sin consolidador).
- * Los no asignados solo se ven en su tab de pastor/líder consolidador:
- * fuera de ahí se excluyen de listas, tarjetas y estadísticas.
+ * Regla vigente: el 1er contacto se escribe desde la iglesia SIN asignar
+ * y el 2do lo hace el consolidador; por eso tarjetas y estadísticas
+ * cuentan a todos los del alcance (asignados o no). Los filtros de
+ * red/grupo/consolidador siguen limitando a su nivel.
  */
 export const ASIGNADO = {
   OR: [

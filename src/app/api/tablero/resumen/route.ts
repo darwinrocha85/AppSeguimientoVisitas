@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import {
-  ASIGNADO,
   NECESITA_ASIGNACION,
   filtroVisitantes,
   iglesiasDelAlcance,
@@ -48,12 +47,13 @@ export async function GET(req: Request) {
     rg.grupoId,
     url.searchParams.get("consolidadorId")
   );
-  // Los no asignados (solo iglesia) no cuentan en listas ni estadísticas:
-  // viven únicamente en su tab de pastor/líder consolidador.
+  // Regla vigente: el 1er contacto se escribe desde la iglesia SIN asignar
+  // (p. ej. mensaje masivo) y el 2do lo hace el consolidador. Por eso las
+  // tarjetas cuentan TODOS los del alcance, asignados o no; con filtro de
+  // red/grupo/consolidador solo cuentan los de ese nivel.
   const whereV: Record<string, unknown> = {
     ...baseV,
     activo: true,
-    ...ASIGNADO,
     ...(rg.redId ? { redId: rg.redId } : {}),
     ...(rg.grupoId ? { grupoId: rg.grupoId } : {}),
     ...(conId ? { consolidadorId: conId } : {}),
