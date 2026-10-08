@@ -20,6 +20,7 @@ type Visitante = {
   peticiones?: string | null;
   observaciones?: string | null;
   estadoActual: string;
+  sinContacto: boolean;
   origen: string | null;
   origenId?: string | null;
   iglesiaId: string;
@@ -103,6 +104,7 @@ const VACIO_FORM = {
   invitadoPor: "",
   peticiones: "",
   observaciones: "",
+  recibeWhatsapp: "SI",
   origenId: "",
   iglesiaId: "",
   redId: "",
@@ -417,6 +419,7 @@ function Contenido() {
       invitadoPor: v.invitadoPor ?? "",
       peticiones: v.peticiones ?? "",
       observaciones: v.observaciones ?? "",
+      recibeWhatsapp: v.sinContacto ? "NO" : "SI",
       origenId: v.origenId ?? "",
       iglesiaId: v.iglesiaId,
       redId: v.redId ?? "",
@@ -441,6 +444,7 @@ function Contenido() {
       invitadoPor: form.invitadoPor || null,
       peticiones: form.peticiones || null,
       observaciones: form.observaciones || null,
+      sinContacto: form.recibeWhatsapp === "NO",
       origenId: form.origenId || null,
       iglesiaId: form.iglesiaId,
       redId: form.redId || null,
@@ -819,6 +823,23 @@ function Contenido() {
         </select>
         <input aria-label="Peticiones de oración" className={`${campo} md:col-span-2`} placeholder="Peticiones de oración" value={form.peticiones} onChange={(e) => setF("peticiones", e.target.value)} />
         <input aria-label="Observaciones" className={campo} placeholder="Observaciones" value={form.observaciones} onChange={(e) => setF("observaciones", e.target.value)} />
+        <fieldset className={`${campo} flex min-h-[44px] items-center gap-4 md:col-span-2`}>
+          <legend className="sr-only">¿Desea recibir comunicación por WhatsApp?</legend>
+          <span className="text-sm font-bold text-navy">¿Recibe WhatsApp?</span>
+          {(["SI", "NO"] as const).map((op) => (
+            <label key={op} className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-navy">
+              <input
+                type="radio"
+                name={esEdicion ? `wa-${id}` : "wa-nuevo"}
+                value={op}
+                checked={form.recibeWhatsapp === op}
+                onChange={(e) => setF("recibeWhatsapp", e.target.value)}
+                className="h-5 w-5 accent-[#204B6E]"
+              />
+              {op === "SI" ? "Sí" : "No"}
+            </label>
+          ))}
+        </fieldset>
         <div className="flex gap-2 md:col-span-3">
           <button
             disabled={guardando}
@@ -1058,10 +1079,24 @@ function Contenido() {
                   ))}
                 </select>
                 <input aria-label="Peticiones" className={`${campo} md:col-span-2`} placeholder="Peticiones" value={l.peticiones} disabled={l.creada} onChange={(e) => setLectura(l.key, "peticiones", e.target.value)} />
-                <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-semibold text-navy">
-                  <input type="checkbox" checked={l.sinContacto} disabled={l.creada} onChange={(e) => setLectura(l.key, "sinContacto", e.target.checked)} className="h-5 w-5 accent-[#A91E32]" />
-                  Sin contacto
-                </label>
+                <fieldset className="flex min-h-[44px] items-center gap-4">
+                  <legend className="sr-only">¿Desea recibir comunicación por WhatsApp?</legend>
+                  <span className="text-sm font-bold text-navy">¿Recibe WhatsApp?</span>
+                  {(["SI", "NO"] as const).map((op) => (
+                    <label key={op} className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-navy">
+                      <input
+                        type="radio"
+                        name={`wa-imp-${l.key}`}
+                        value={op}
+                        checked={(l.sinContacto ? "NO" : "SI") === op}
+                        disabled={l.creada}
+                        onChange={(e) => setLectura(l.key, "sinContacto", e.target.value === "NO")}
+                        className="h-5 w-5 accent-[#204B6E]"
+                      />
+                      {op === "SI" ? "Sí" : "No"}
+                    </label>
+                  ))}
+                </fieldset>
                 <input aria-label="Observaciones" className={`${campo} md:col-span-3`} placeholder="Observaciones" value={l.observaciones} disabled={l.creada} onChange={(e) => setLectura(l.key, "observaciones", e.target.value)} />
                 {!l.creada && (
                   <div className="flex gap-2 md:col-span-3">
@@ -1201,6 +1236,7 @@ function Contenido() {
                           >
                             <Icono className="h-4 w-4">{I.telefono}</Icono>
                           </a>
+                          {!v.sinContacto && (
                           <a
                             href={enlaceWhatsApp(v.telefono) ?? "#"}
                             target="_blank"
@@ -1211,7 +1247,16 @@ function Contenido() {
                           >
                             <Icono className="h-4 w-4">{I.whatsapp}</Icono>
                           </a>
+                          )}
                         </>
+                      )}
+                      {v.sinContacto && (
+                        <span
+                          title="No desea recibir WhatsApp: excluido de mensajes"
+                          className="rounded-full border border-wine/20 bg-wine/10 px-2 py-0.5 text-[10px] font-black tracking-[0.06em] text-wine uppercase"
+                        >
+                          Sin WhatsApp
+                        </span>
                       )}
                       <span className="rounded-full border border-sand bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600">
                         {new Date(v.fechaRegistro).toLocaleDateString("es-ES")}
@@ -1534,7 +1579,7 @@ function VistaLiderGrupo({
                           Llamar
                         </span>
                       )}
-                      {enlaceWhatsApp(v.telefono) ? (
+                      {!v.sinContacto && enlaceWhatsApp(v.telefono) ? (
                         <a
                           href={enlaceWhatsApp(v.telefono) as string}
                           target="_blank"
@@ -1546,8 +1591,11 @@ function VistaLiderGrupo({
                           WhatsApp
                         </a>
                       ) : (
-                        <span className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase">
-                          WhatsApp
+                        <span
+                          title={v.sinContacto ? "No desea recibir WhatsApp: excluido de mensajes" : undefined}
+                          className="flex min-h-[40px] cursor-not-allowed items-center gap-1.5 rounded-lg border border-sand bg-paper px-3 text-[12px] font-black tracking-wide text-zinc-400 uppercase"
+                        >
+                          {v.sinContacto ? "Sin WhatsApp ⛔" : "WhatsApp"}
                         </span>
                       )}
                     </span>

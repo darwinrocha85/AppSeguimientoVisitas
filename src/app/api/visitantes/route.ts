@@ -166,6 +166,7 @@ export async function GET(req: Request) {
       peticiones: v.peticiones,
       observaciones: v.observaciones,
       estadoActual: v.estadoActual,
+      sinContacto: v.sinContacto,
       origen: v.origen?.nombre ?? null,
       origenId: v.origenId ?? null,
       iglesiaId: v.iglesiaId,

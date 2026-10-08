@@ -12,6 +12,7 @@ export type VisitanteRaso = {
   telefono: string | null;
   zona: string;
   estadoActual: string;
+  sinContacto: boolean;
   origen: string | null;
   iglesiaId: string;
   iglesia: string;
@@ -409,7 +410,7 @@ export function VistaConsolidador({
                     Sin teléfono
                   </span>
                 )}
-                {enlaceWhatsApp(v.telefono) ? (
+                {!v.sinContacto && enlaceWhatsApp(v.telefono) ? (
                   <a
                     href={enlaceWhatsApp(v.telefono) as string}
                     target="_blank"
@@ -419,8 +420,11 @@ export function VistaConsolidador({
                     WhatsApp
                   </a>
                 ) : (
-                  <span className="flex min-h-[44px] items-center justify-center rounded-xl border border-sand bg-paper text-[12px] font-black tracking-wide text-zinc-400 uppercase">
-                    Sin WhatsApp
+                  <span
+                    title={v.sinContacto ? "No desea recibir WhatsApp: excluido de mensajes" : undefined}
+                    className="flex min-h-[44px] items-center justify-center rounded-xl border border-sand bg-paper text-[12px] font-black tracking-wide text-zinc-400 uppercase"
+                  >
+                    {v.sinContacto ? "Sin WhatsApp ⛔" : "Sin WhatsApp"}
                   </span>
                 )}
                 <button
