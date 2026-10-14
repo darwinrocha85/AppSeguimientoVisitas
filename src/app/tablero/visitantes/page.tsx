@@ -29,9 +29,11 @@ type Visitante = {
   redId?: string | null;
   grupoId?: string | null;
   red: string | null;
+  liderRed?: { nombre: string; telefono: string | null } | null;
   grupo: string | null;
   consolidadorId?: string | null;
   consolidador: string | null;
+  consolidadorTelefono?: string | null;
   fechaRegistro: string;
   ultimoCambio: string;
   historial: HistorialEntrada[];

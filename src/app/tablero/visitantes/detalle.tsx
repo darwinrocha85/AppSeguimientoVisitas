@@ -1,7 +1,10 @@
 "use client";
 
-/** Detalle desplegable: peticiones, observaciones, quién invitó e historial
- * de reportes. Los datos ya vienen filtrados por alcance del rol. */
+import { formatearTelefono } from "@/lib/telefono";
+
+/** Detalle desplegable: peticiones, observaciones, quién invitó, equipo
+ * (líder de red y consolidador con teléfonos) e historial de reportes.
+ * Los datos ya vienen filtrados por alcance del rol. */
 
 export type HistorialEntrada = {
   deEstado: string | null;
@@ -18,6 +21,9 @@ export function DetalleVisitante({
     invitadoPor?: string | null;
     peticiones?: string | null;
     observaciones?: string | null;
+    consolidador?: string | null;
+    consolidadorTelefono?: string | null;
+    liderRed?: { nombre: string; telefono: string | null } | null;
     historial?: HistorialEntrada[];
   };
 }) {
@@ -50,6 +56,26 @@ export function DetalleVisitante({
             Observaciones
           </dt>
           <dd className="font-semibold">{v.observaciones || "—"}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-black tracking-[0.06em] text-zinc-500 uppercase">
+            Líder de red
+          </dt>
+          <dd className="font-semibold">
+            {v.liderRed
+              ? `${v.liderRed.nombre}${v.liderRed.telefono ? ` · ${formatearTelefono(v.liderRed.telefono)}` : ""}`
+              : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-black tracking-[0.06em] text-zinc-500 uppercase">
+            Consolidador
+          </dt>
+          <dd className="font-semibold">
+            {v.consolidador
+              ? `${v.consolidador}${v.consolidadorTelefono ? ` · ${formatearTelefono(v.consolidadorTelefono)}` : ""}`
+              : "—"}
+          </dd>
         </div>
       </dl>
       <p className="mt-3 text-[11px] font-black tracking-[0.06em] text-zinc-500 uppercase">

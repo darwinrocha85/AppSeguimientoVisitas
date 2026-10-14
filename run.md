@@ -97,8 +97,25 @@ node scripts/enviar-whatsapp.mjs --solo 6XXXXXXXX --nombre Nombre --confirmado
 node scripts/enviar-whatsapp.mjs --iglesia Barcelona --confirmado
 ```
 
-Sin `--confirmado` es simulacro. Respeta “Recibe WhatsApp = No”, deja
-`envios-*.log` (solo ids) y pausa 8–15s entre mensajes. Al enviar, quien
+### Cada vez que agregues visitantes nuevos
+
+El envío solo llega a “Desea contactar” (los nuevos); los ya contactados
+no lo reciben de nuevo:
+
+```powershell
+node scripts/bajar-prod.mjs --confirmado
+node scripts/enviar-whatsapp.mjs --iglesia todas
+node scripts/enviar-whatsapp.mjs --iglesia todas --confirmado
+node scripts/bajar-prod.mjs --confirmado
+```
+
+El 2º comando es simulacro (lista destinatarios). El 4º trae a local los
+avances a 1er contacto. Para otra etapa o fecha: `--estado PRIMER_CONTACTO`
+o `--desde 2026-10-09T00:00`.
+
+Sin `--confirmado` es simulacro. Por defecto solo llega a DESEA_SER_CONTACTADO
+(nunca contactados): repetir el envío alcanza solo a los nuevos. Respeta
+“Recibe WhatsApp = No”, deja `envios-*.log` (solo ids) y pausa 8–15s entre mensajes. Al enviar, quien
 estaba en “Desea ser contactado” avanza a primer contacto en prod (con
 historial y fecha de contacto); después corre `bajar-prod`. La plantilla está
 en `plantillas/oracion-intercesion.txt` (`{nombre}`, `{iglesia}`).

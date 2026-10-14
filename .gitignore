@@ -38,9 +38,18 @@ yarn-error.log*
 *.db
 *.db-journal
 *.db.respaldo-*
-# sesion de WhatsApp (credencial del movil de la iglesia, nunca commitear)
+# datos operativos: nunca publicar (mueven o contienen datos reales de
+# personas u organización; se usan solo en local)
+plantillas/
+scripts/bajar-prod.mjs
+scripts/subir-prod.mjs
+scripts/subir-visitantes.mjs
+scripts/enviar-whatsapp.mjs
+scripts/importar-fichas-local.mjs
+scripts/leer-fichas-tmp.mjs
+scripts/claves-temporal.mjs
+scripts/verificar-*.mjs
 wa-sesion/
-# registros de envios puntuales (contienen ids, solo local)
 envios-*.log
 # planillas escaneadas con datos reales (nunca commitear)
 pdf_data_dev/

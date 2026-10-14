@@ -83,7 +83,7 @@ export async function GET(req: Request) {
     where: alcance,
     include: {
       origen: { select: { nombre: true } },
-      consolidador: { select: { nombre: true, apellido: true } },
+      consolidador: { select: { nombre: true, apellido: true, telefono: true } },
       iglesia: { select: { nombre: true } },
     },
     orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
@@ -97,7 +97,7 @@ export async function GET(req: Request) {
       where: { ...base, activo: true, ...NECESITA_ASIGNACION },
       include: {
         origen: { select: { nombre: true } },
-        consolidador: { select: { nombre: true, apellido: true } },
+        consolidador: { select: { nombre: true, apellido: true, telefono: true } },
         iglesia: { select: { nombre: true } },
       },
       orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
@@ -139,7 +139,12 @@ export async function GET(req: Request) {
   const grupoIds = [...new Set(lista.map((v) => v.grupoId).filter(Boolean))];
   const [redes, grupos, cambios, reporte] = await Promise.all([
     redIds.length > 0
-      ? await db.red.findMany({ where: { id: { in: redIds as string[] } } })
+      ? await db.red.findMany({
+          where: { id: { in: redIds as string[] } },
+          include: {
+            lider: { select: { nombre: true, apellido: true, telefono: true } },
+          },
+        })
       : [],
     grupoIds.length > 0
       ? await db.grupo.findMany({
@@ -177,6 +182,12 @@ export async function GET(req: Request) {
     porHistorial.set(h.visitanteId, l);
   }
   const nombreRed = Object.fromEntries(redes.map((r) => [r.id, r.nombre]));
+  const liderRed = Object.fromEntries(
+    redes.map((r) => [
+      r.id,
+      r.lider ? { nombre: `${r.lider.nombre} ${r.lider.apellido}`, telefono: r.lider.telefono } : null,
+    ])
+  );
   const nombreGrupo = Object.fromEntries(grupos.map((g) => [g.id, g.nombre]));
   const ultimoCambio = Object.fromEntries(
     cambios.map((c) => [c.visitanteId, c._max.fechaCambio])
@@ -204,11 +215,13 @@ export async function GET(req: Request) {
       redId: v.redId,
       grupoId: v.grupoId,
       red: v.redId ? (nombreRed[v.redId] ?? null) : null,
+      liderRed: v.redId ? (liderRed[v.redId] ?? null) : null,
       grupo: v.grupoId ? (nombreGrupo[v.grupoId] ?? null) : null,
       consolidadorId: v.consolidadorId,
       consolidador: v.consolidador
         ? `${v.consolidador.nombre} ${v.consolidador.apellido}`
         : null,
+      consolidadorTelefono: v.consolidador?.telefono ?? null,
       fechaRegistro: v.createdAt,
       ultimoCambio: ultimoCambio[v.id] ?? v.createdAt,
       historial: porHistorial.get(v.id) ?? [],
