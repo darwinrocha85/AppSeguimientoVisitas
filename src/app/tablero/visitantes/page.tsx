@@ -1244,7 +1244,7 @@ function Contenido() {
                         {v.origen && ` • ${v.origen}`}
                       </span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-2">
+                    <span className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
                       {v.telefono && (
                         <>
                           <a
@@ -1591,7 +1591,7 @@ function VistaLiderGrupo({
                         {!vencido && <span>· {hs}h desde asignación</span>}
                       </span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-2">
+                    <span className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
                       <span className="rounded-full border border-sand bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600">
                         {v.telefono ? formatearTelefono(v.telefono) : "—"}
                       </span>
