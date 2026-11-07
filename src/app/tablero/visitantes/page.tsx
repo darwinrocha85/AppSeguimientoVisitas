@@ -910,6 +910,8 @@ function Contenido() {
   }
 
   function limiteDe(v: Visitante) {
+    // Con la primera visita de amistad termina el seguimiento: ya no alerta.
+    if (v.estadoActual === "VISITA_AMISTAD") return Infinity;
     return (
       resumen?.alertas.find(
         (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual
@@ -1438,6 +1440,8 @@ function VistaLiderGrupo({
   }
 
   function limiteDe(v: Visitante) {
+    // Con la primera visita de amistad termina el seguimiento: ya no alerta.
+    if (v.estadoActual === "VISITA_AMISTAD") return Infinity;
     return (
       alertas.find(
         (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual

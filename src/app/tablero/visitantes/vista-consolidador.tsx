@@ -198,6 +198,7 @@ export function VistaConsolidador({
         (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual
       )?.maxHoras ?? 100;
     const enTiempo = (v: VisitanteRaso) =>
+      v.estadoActual === "VISITA_AMISTAD" ||
       horasDesde(v.ultimoCambio) <= limite(v);
     const parte = (e: string) => {
       const alDia = lista.filter(
@@ -215,6 +216,8 @@ export function VistaConsolidador({
   }, [lista, alertas]);
 
   function limiteDe(v: VisitanteRaso) {
+    // Con la primera visita de amistad termina el seguimiento: ya no alerta.
+    if (v.estadoActual === "VISITA_AMISTAD") return Infinity;
     return (
       alertas.find(
         (a) => a.iglesiaId === v.iglesiaId && a.estado === v.estadoActual

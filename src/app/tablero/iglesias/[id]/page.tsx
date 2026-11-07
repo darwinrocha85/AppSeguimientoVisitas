@@ -97,7 +97,7 @@ export default function DetalleIglesia() {
     { clave: "DESEA_SER_CONTACTADO", texto: "De desea contactar a 1er contacto" },
     { clave: "PRIMER_CONTACTO", texto: "De 1er contacto a 2do contacto (incluye bandeja No asignado)" },
     { clave: "SEGUNDO_CONTACTO", texto: "De 2do contacto a visita de amistad" },
-    { clave: "VISITA_AMISTAD", texto: "En visita de amistad" },
+    // Visita de amistad no alerta: con la primera termina el seguimiento.
   ];
   const [limites, setLimites] = useState<Record<string, string>>({});
   const [errorLimite, setErrorLimite] = useState("");
