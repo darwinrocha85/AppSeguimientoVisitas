@@ -1,6 +1,7 @@
 import * as jose from "jose";
 import { cookies } from "next/headers";
 import type { Rol } from "@prisma/client";
+import { db } from "./db";
 
 const NOMBRE_COOKIE = "sesion";
 
@@ -29,25 +30,41 @@ export async function leerSesion(): Promise<Sesion | null> {
   const c = await cookies();
   const token = c.get(NOMBRE_COOKIE)?.value;
   if (!token) return null;
+  let sub: string;
   try {
     const { payload } = await jose.jwtVerify(token, secreto());
-    return {
-      sub: String(payload.sub ?? payload.sub),
-      usuario: String(payload.usuario ?? ""),
-      rol: payload.rol as Rol,
-      iglesias: Array.isArray(payload.iglesias)
-        ? (payload.iglesias as string[])
-        : [],
-    };
+    sub = String(payload.sub ?? "");
   } catch {
     return null;
   }
+  if (!sub) return null;
+  // El token solo identifica al usuario. Rol, iglesias y si sigue activo se
+  // leen de la base en cada petición: desactivar a alguien o cambiarle el
+  // rol o las iglesias surte efecto al instante, sin esperar a que caduque.
+  const u = await db.usuario.findUnique({
+    where: { id: sub },
+    select: {
+      usuario: true,
+      rol: true,
+      activo: true,
+      iglesias: { select: { iglesiaId: true } },
+    },
+  });
+  if (!u || !u.activo) return null;
+  return {
+    sub,
+    usuario: u.usuario,
+    rol: u.rol,
+    iglesias: u.iglesias.map((i) => i.iglesiaId),
+  };
 }
 
 export async function guardarSesion(token: string) {
   const c = await cookies();
   c.set(NOMBRE_COOKIE, token, {
     httpOnly: true,
+    // Solo por HTTPS en producción (Vercel); en local se usa http://localhost.
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 12 * 60 * 60,

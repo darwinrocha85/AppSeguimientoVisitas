@@ -81,6 +81,9 @@ model Usuario {
   activo       Boolean  @default(true)
   redId        String?
   grupoId      String?
+  // Freno a fuerza bruta en el login: 5 fallos seguidos bloquean 15 min.
+  intentosFallidos Int       @default(0)
+  bloqueadoHasta   DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

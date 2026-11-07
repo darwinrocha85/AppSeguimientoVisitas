@@ -171,10 +171,19 @@ export default function Usuarios() {
       telefono: telefono || null,
     };
     const editado = usuarios.find((x) => x.id === editandoId);
+    if (editado && esYoPastor(editado)) {
+      if (!soloDigitos(telefono)) {
+        setError("Teléfono obligatorio (9 dígitos)");
+        setGuardando(false);
+        return;
+      }
+    }
     const rolFinal = editado && ROLES_BAJOS.some((r) => r.value === editado.rol) ? editRol : editado?.rol;
     const cambiaRol = !!editado && rolFinal !== editado.rol;
     if (cambiaRol) cuerpo.rol = rolFinal;
-    if (esSuper) {
+    if (editado && esYoPastor(editado)) {
+      // Solo nombre, apellido y teléfono: rol e iglesias no cambian aquí.
+    } else if (esSuper) {
       cuerpo.iglesiaIds = asignadas;
     } else if (
       usuarios.find((x) => x.id === editandoId)?.rol === "LIDER_CONSOLIDADOR"
@@ -244,10 +253,16 @@ export default function Usuarios() {
     return u.iglesias[0].iglesia.id;
   }
 
+  /** El pastor en su propia ficha: solo datos personales. */
+  function esYoPastor(u: Usuario) {
+    return esPastorUi && u.id === sesion?.sub;
+  }
+
   /** Quién puede tocar a quién en esta vista (la API vuelve a validar). */
   function puedeEditar(u: Usuario) {
     if (u.rol === "SUPERADMIN") return false;
     if (esSuper) return true;
+    if (esYoPastor(u)) return true;
     if (!esGestorUi) return false;
     // Pastor: todo menos otro pastor. Líder consolidador: solo roles bajos.
     if (esPastorUi) return u.rol !== "PASTOR";
@@ -581,12 +596,14 @@ export default function Usuarios() {
                 >
                   Perfil
                 </button>
-                <button
-                  onClick={() => eliminar(u)}
-                  className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-wine/80 underline-offset-2 hover:underline"
-                >
-                  Eliminar
-                </button>
+                {!esYoPastor(u) && (
+                  <button
+                    onClick={() => eliminar(u)}
+                    className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-wine/80 underline-offset-2 hover:underline"
+                  >
+                    Eliminar
+                  </button>
+                )}
               </span>
             )}
           </span>
@@ -618,7 +635,7 @@ export default function Usuarios() {
               value={formatearTelefono(telefono)}
               onChange={(e) => setTelefono(soloDigitos(e.target.value))}
             />
-            {esSuper ? (
+            {esYoPastor(u) ? null : esSuper ? (
               <div className="md:col-span-2">
                 <SelectorIglesias
                   iglesias={iglesias}
@@ -1095,7 +1112,7 @@ export default function Usuarios() {
               }}
               className="mt-4 min-h-[44px] w-full cursor-pointer rounded-xl bg-navy px-4 text-sm font-black text-white uppercase transition-all duration-200 hover:bg-navy-dark"
             >
-              Editar datos y rol
+              {esYoPastor(perfil) ? "Editar mis datos" : "Editar datos y rol"}
             </button>
           )}
         </Modal>

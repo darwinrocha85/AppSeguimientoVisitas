@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
 import { esGestor } from "@/lib/alcance";
@@ -21,6 +22,35 @@ const Esquema = z.object({
   grupoId: z.string().nullable().optional(),
   activo: z.boolean().optional(),
 });
+
+/**
+ * Suelta los visitantes que ya no puede atender: todos si está inactivo, o
+ * los que quedaron fuera de su iglesia/red/grupo tras editarlo. Quedan sin
+ * consolidador (vuelven a la bandeja de asignación) en vez de olvidados.
+ */
+async function liberarVisitantes(usuarioId: string) {
+  const u = await db.usuario.findUnique({
+    where: { id: usuarioId },
+    select: {
+      activo: true,
+      rol: true,
+      redId: true,
+      grupoId: true,
+      iglesias: { select: { iglesiaId: true } },
+    },
+  });
+  if (!u) return;
+  const fuera: Prisma.VisitanteWhereInput[] = [
+    { iglesiaId: { notIn: u.iglesias.map((i) => i.iglesiaId) } },
+  ];
+  // El líder de red atiende toda su red: su grupo propio no lo limita.
+  if (u.grupoId && u.rol !== "LIDER_RED") fuera.push({ grupoId: { not: null }, NOT: { grupoId: u.grupoId } });
+  if (u.redId) fuera.push({ redId: { not: null }, NOT: { redId: u.redId } });
+  await db.visitante.updateMany({
+    where: { consolidadorId: usuarioId, ...(u.activo ? { OR: fuera } : {}) },
+    data: { consolidadorId: null },
+  });
+}
 
 function sinHash(u: Record<string, unknown>) {
   const { passwordHash, ...resto } = u;
@@ -46,6 +76,45 @@ export async function PUT(
   });
   if (!actual)
     return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+  // El pastor edita sus propios datos personales (no rol, iglesias ni estado:
+  // eso lo gestiona el superadmin).
+  if (s.rol === "PASTOR" && id === s.sub) {
+    const propio = Esquema.safeParse(await req.json().catch(() => null));
+    if (!propio.success)
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+    const p = propio.data;
+    if (
+      p.rol !== undefined ||
+      p.iglesiaIds !== undefined ||
+      p.redId !== undefined ||
+      p.grupoId !== undefined ||
+      p.activo !== undefined
+    )
+      return NextResponse.json(
+        { error: "Solo puedes cambiar tus datos personales" },
+        { status: 403 }
+      );
+    const tel = p.telefono !== undefined ? p.telefono : actual.telefono;
+    if (!tel)
+      return NextResponse.json(
+        { error: "Teléfono obligatorio (9 dígitos)" },
+        { status: 400 }
+      );
+    const yo = await db.usuario.update({
+      where: { id },
+      data: {
+        ...(p.nombre ? { nombre: p.nombre } : {}),
+        ...(p.apellido ? { apellido: p.apellido } : {}),
+        ...(p.telefono !== undefined ? { telefono: p.telefono } : {}),
+        ...(p.contrasena
+          ? { passwordHash: await bcrypt.hash(p.contrasena, 10) }
+          : {}),
+      },
+      include: { iglesias: { include: { iglesia: true } } },
+    });
+    return NextResponse.json(sinHash(yo));
+  }
 
   const esAlta =
     actual.rol === "PASTOR" ||
@@ -306,6 +375,7 @@ export async function PUT(
     },
     include: { iglesias: { include: { iglesia: true } } },
   });
+  await liberarVisitantes(id);
   return NextResponse.json(sinHash(actualizado));
 }
 
@@ -371,5 +441,6 @@ export async function DELETE(
     where: { liderId: id },
     data: { liderId: null },
   });
+  await liberarVisitantes(id);
   return NextResponse.json({ ok: true });
 }

@@ -124,6 +124,10 @@ export function VistaConsolidador({
     if (!reporteId) return;
     const v = lista.find((x) => x.id === reporteId);
     if (!v) return;
+    if (!fechaContacto) {
+      setErrorReporte("Indica la fecha del contacto");
+      return;
+    }
     setErrorReporte("");
     setGuardandoReporte(true);
     const r = await fetch(`/api/visitantes/${reporteId}/reporte`, {

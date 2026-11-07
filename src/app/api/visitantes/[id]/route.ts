@@ -88,19 +88,66 @@ export async function PUT(
     if (!o)
       return NextResponse.json({ error: "Origen inválido" }, { status: 400 });
   }
-  if (d.consolidadorId) {
+  // Un consolidador encaja si está activo, consolida, es de la iglesia y su
+  // red/grupo (si los tiene) coinciden con los del visitante. El líder de
+  // red encaja en cualquier grupo de su red (aunque también lidere uno).
+  async function encaja(consolidadorId: string) {
     const c = await db.usuario.findFirst({
       where: {
-        id: d.consolidadorId,
+        id: consolidadorId,
         activo: true,
         rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         iglesias: { some: { iglesiaId } },
       },
-      select: { id: true, grupoId: true, redId: true },
+      select: { id: true, rol: true, grupoId: true, redId: true },
     });
-    if (!c || (c.grupoId && grupoId && c.grupoId !== grupoId) || (c.redId && redId && c.redId !== redId))
-      return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
+    if (!c) return false;
+    if (c.redId && redId && c.redId !== redId) return false;
+    if (c.rol !== "LIDER_RED" && c.grupoId && grupoId && c.grupoId !== grupoId)
+      return false;
+    return true;
   }
+  if (d.consolidadorId && !(await encaja(d.consolidadorId)))
+    return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
+
+  // Cambio de grupo sin elegir consolidador: lo toma el líder de la red del
+  // nuevo grupo (si está activo y es de la iglesia). Si se elige uno a mano,
+  // se respeta.
+  const cambiaGrupo = !!grupoId && grupoId !== actual.grupoId;
+  let consolidadorAuto: string | null | undefined = undefined;
+  if (cambiaGrupo && !d.consolidadorId) {
+    const g = await db.grupo.findUnique({
+      where: { id: grupoId },
+      select: { red: { select: { liderId: true } } },
+    });
+    const liderId = g?.red.liderId;
+    const lider = liderId
+      ? await db.usuario.findFirst({
+          where: {
+            id: liderId,
+            activo: true,
+            rol: "LIDER_RED",
+            iglesias: { some: { iglesiaId } },
+          },
+          select: { id: true },
+        })
+      : null;
+    consolidadorAuto = lider?.id ?? null;
+  }
+
+  // Si cambia iglesia/red/grupo sin indicar consolidador (y no hubo líder
+  // automático), el actual se revalida: si ya no encaja se quita (vuelve a
+  // No asignados) en lugar de dejarlo asignado a alguien de otro grupo.
+  const cambiaUbicacion =
+    iglesiaId !== actual.iglesiaId ||
+    redId !== actual.redId ||
+    grupoId !== actual.grupoId;
+  const quitaConsolidador =
+    consolidadorAuto === undefined &&
+    d.consolidadorId === undefined &&
+    cambiaUbicacion &&
+    !!actual.consolidadorId &&
+    !(await encaja(actual.consolidadorId));
 
   // El teléfono identifica a la persona: no se guarda dos veces
   // (global, entre activos; sin teléfono se permite).
@@ -136,9 +183,13 @@ export async function PUT(
       ...(d.iglesiaId ? { iglesiaId: d.iglesiaId } : {}),
       ...(d.redId !== undefined ? { redId: d.redId } : {}),
       ...(d.grupoId !== undefined ? { grupoId: d.grupoId } : {}),
-      ...(d.consolidadorId !== undefined
+      ...(consolidadorAuto !== undefined
+        ? { consolidadorId: consolidadorAuto }
+        : d.consolidadorId !== undefined
         ? { consolidadorId: d.consolidadorId }
-        : {}),
+        : quitaConsolidador
+          ? { consolidadorId: null }
+          : {}),
       ...(d.sinContacto !== undefined ? { sinContacto: d.sinContacto } : {}),
     },
   });

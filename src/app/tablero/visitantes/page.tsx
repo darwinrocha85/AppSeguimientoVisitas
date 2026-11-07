@@ -90,6 +90,20 @@ const INSIGNIA_ESTADO: Record<string, { texto: string; clases: string }> = {
   },
 };
 
+/** Siguiente paso del reporte (sin saltos; la visita de amistad se repite). */
+const SIGUIENTE: Record<string, { estado: string; etiqueta: string }> = {
+  DESEA_SER_CONTACTADO: { estado: "PRIMER_CONTACTO", etiqueta: "Primer contacto" },
+  PRIMER_CONTACTO: { estado: "SEGUNDO_CONTACTO", etiqueta: "Segundo contacto" },
+  SEGUNDO_CONTACTO: { estado: "VISITA_AMISTAD", etiqueta: "Visita de amistad" },
+  VISITA_AMISTAD: { estado: "VISITA_AMISTAD", etiqueta: "Otra visita de amistad" },
+};
+
+function ahoraLocal() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 const campo =
   "min-h-[44px] rounded-xl border border-sand bg-white px-4 text-sm text-navy outline-none placeholder:text-[#B8A99A]/70 focus:border-navy/30 focus:ring-4 focus:ring-navy/[0.06]";
 
@@ -499,19 +513,6 @@ function Contenido() {
     else setError("No se pudo desactivar");
   }
 
-  const SIGUIENTE: Record<string, { estado: string; etiqueta: string }> = {
-    DESEA_SER_CONTACTADO: { estado: "PRIMER_CONTACTO", etiqueta: "Primer contacto" },
-    PRIMER_CONTACTO: { estado: "SEGUNDO_CONTACTO", etiqueta: "Segundo contacto" },
-    SEGUNDO_CONTACTO: { estado: "VISITA_AMISTAD", etiqueta: "Visita de amistad" },
-    VISITA_AMISTAD: { estado: "VISITA_AMISTAD", etiqueta: "Otra visita de amistad" },
-  };
-
-  function ahoraLocal() {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-  }
-
   function abrirAsignar(v: Visitante) {
     setAsignandoId(asignandoId === v.id ? null : v.id);
     setEditandoId(null);
@@ -557,6 +558,10 @@ function Contenido() {
   async function guardarReporte(id: string) {
     const v = lista.find((x) => x.id === id);
     if (!v) return;
+    if (!repFecha) {
+      setRepError("Indica la fecha del contacto");
+      return;
+    }
     setRepError("");
     setRepGuardando(true);
     const r = await fetch(`/api/visitantes/${id}/reporte`, {
@@ -900,6 +905,8 @@ function Contenido() {
           alertas={resumen?.alertas ?? []}
           estadoInicial={estadoFiltro}
           esLiderRed={sesion.rol === "LIDER_RED"}
+          miId={sesion.sub}
+          onCambio={recargar}
         />
       </>
     );
@@ -1424,16 +1431,61 @@ function VistaLiderGrupo({
   alertas,
   estadoInicial = null,
   esLiderRed = false,
+  miId,
+  onCambio,
 }: {
   lista: Visitante[];
   alertas: { iglesiaId: string; estado: string; maxHoras: number }[];
   estadoInicial?: string | null;
   esLiderRed?: boolean;
+  miId: string;
+  onCambio: () => void | Promise<void>;
 }) {
   const [estado, setEstado] = useState<string | null>(estadoInicial);
   const [filtro, setFiltro] = useState<"todos" | "pendientes" | "alDia">("todos");
   const [detalleId, setDetalleId] = useState<string | null>(null);
   const [ahora] = useState(() => Date.now());
+  // Reporte solo en los visitantes que el líder tiene asignados (también
+  // consolida); el resto de su red/grupo es de solo lectura.
+  const [reporteId, setReporteId] = useState<string | null>(null);
+  const [repFecha, setRepFecha] = useState("");
+  const [repObs, setRepObs] = useState("");
+  const [repError, setRepError] = useState("");
+  const [repGuardando, setRepGuardando] = useState(false);
+  const tieneAsignados = lista.some((v) => v.consolidadorId === miId);
+
+  function abrirReporte(v: Visitante) {
+    setReporteId(reporteId === v.id ? null : v.id);
+    setRepFecha(ahoraLocal());
+    setRepObs("");
+    setRepError("");
+  }
+
+  async function guardarReporte(v: Visitante) {
+    if (!repFecha) {
+      setRepError("Indica la fecha del contacto");
+      return;
+    }
+    setRepError("");
+    setRepGuardando(true);
+    const r = await fetch(`/api/visitantes/${v.id}/reporte`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        aEstado: SIGUIENTE[v.estadoActual]?.estado ?? v.estadoActual,
+        fechaContacto: new Date(repFecha).toISOString(),
+        observaciones: repObs || null,
+      }),
+    });
+    setRepGuardando(false);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      setRepError(j?.error ?? "No se pudo guardar el reporte");
+      return;
+    }
+    setReporteId(null);
+    await onCambio();
+  }
 
   function horasDesde(iso: string) {
     return Math.max(0, Math.floor((ahora - new Date(iso).getTime()) / 3600000));
@@ -1502,7 +1554,9 @@ function VistaLiderGrupo({
                 : `Visitantes de tu grupo • ${visible.length}`}
             </h2>
             <p className="text-xs text-zinc-500">
-              Solo lectura · Estado, origen y contacto
+              {tieneAsignados
+                ? "Solo lectura · Reporte en tus visitantes asignados"
+                : "Solo lectura · Estado, origen y contacto"}
             </p>
           </div>
         </div>
@@ -1629,6 +1683,14 @@ function VistaLiderGrupo({
                           {v.sinContacto ? "Sin WhatsApp ⛔" : "WhatsApp"}
                         </span>
                       )}
+                      {v.consolidadorId === miId && (
+                        <button
+                          onClick={() => abrirReporte(v)}
+                          className="min-h-[40px] cursor-pointer rounded-lg px-2 text-[12px] font-bold text-navy/70 hover:underline"
+                        >
+                          {reporteId === v.id ? "Cerrar" : "Reporte"}
+                        </button>
+                      )}
                       <button
                         onClick={() =>
                           setDetalleId(detalleId === v.id ? null : v.id)
@@ -1640,6 +1702,50 @@ function VistaLiderGrupo({
                     </span>
                   </div>
                   {detalleId === v.id && <DetalleVisitante v={v} />}
+                  {reporteId === v.id && v.consolidadorId === miId && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-sand/60 bg-white p-3 md:grid-cols-3">
+                      <p className="text-xs font-bold text-navy md:col-span-3">
+                        Reporte: avanza a{" "}
+                        {SIGUIENTE[v.estadoActual]?.etiqueta} con su fecha de
+                        contacto. Queda en el historial.
+                      </p>
+                      <input
+                        aria-label="Fecha del contacto"
+                        type="datetime-local"
+                        className={campo}
+                        value={repFecha}
+                        onChange={(e) => setRepFecha(e.target.value)}
+                        required
+                      />
+                      <input
+                        aria-label="Observaciones del reporte"
+                        className={`${campo} md:col-span-2`}
+                        placeholder="Cómo fue el contacto…"
+                        value={repObs}
+                        onChange={(e) => setRepObs(e.target.value)}
+                      />
+                      <div className="flex gap-2 md:col-span-3">
+                        <button
+                          onClick={() => guardarReporte(v)}
+                          disabled={repGuardando}
+                          className="min-h-[44px] flex-1 cursor-pointer rounded-xl bg-gold px-4 text-sm font-black text-white uppercase disabled:opacity-60"
+                        >
+                          {repGuardando ? "Guardando…" : "Guardar reporte"}
+                        </button>
+                        <button
+                          onClick={() => setReporteId(null)}
+                          className="min-h-[44px] cursor-pointer rounded-xl border border-sand bg-white px-4 text-sm font-bold text-navy"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      {repError && (
+                        <p role="alert" className="text-sm font-semibold text-wine md:col-span-3">
+                          {repError}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {vencido && (
                     <p
                       role="alert"

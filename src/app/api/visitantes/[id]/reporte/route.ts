@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { leerSesion } from "@/lib/auth";
-import { esGestor } from "@/lib/alcance";
+import { ROLES_QUE_CONSOLIDAN, esGestor } from "@/lib/alcance";
 import { esSuperadmin } from "@/lib/permisos";
 
 const ORDEN = [
@@ -29,7 +29,10 @@ const Esquema = z.object({
  * - Cada reporte crea una entrada en el historial (de/a, fecha_cambio,
  *   fecha_contacto, cambiado_por) y actualiza estadoActual.
  * - Permisos: pastor/líder consolidador (su iglesia), superadmin (todo)
- *   y consolidador (solo sus asignados). Líderes de red/grupo: lectura.
+ *   y quien tenga el visitante asignado (consolidador raso o líder de
+ *   red/grupo que también consolida), solo en sus asignados.
+ * - La fecha de contacto es obligatoria al avanzar.
+ * - Bloqueo optimista por updatedAt: un doble envío no duplica el avance.
  */
 export async function POST(
   req: Request,
@@ -44,16 +47,16 @@ export async function POST(
 
   const esGest = esGestor(s);
   const esSA = esSuperadmin(s);
-  const esRaso = s.rol === "CONSOLIDADOR";
-  if (!esGest && !esSA && !esRaso)
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
-  if (!esSA && !s.iglesias.includes(v.iglesiaId))
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
-  if (esRaso && v.consolidadorId !== s.sub)
+  const esAsignado =
+    v.consolidadorId === s.sub &&
+    (ROLES_QUE_CONSOLIDAN as readonly string[]).includes(s.rol);
+  if (!esGest && !esSA && !esAsignado)
     return NextResponse.json(
       { error: "Solo tus visitantes asignados" },
       { status: 403 }
     );
+  if (!esSA && !s.iglesias.includes(v.iglesiaId))
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
 
   const datos = Esquema.safeParse(await req.json().catch(() => null));
   if (!datos.success)
@@ -75,6 +78,11 @@ export async function POST(
   }
 
   let fechaContacto: Date | null = null;
+  if (aEstado && !datos.data.fechaContacto)
+    return NextResponse.json(
+      { error: "Indica la fecha del contacto" },
+      { status: 400 }
+    );
   if (datos.data.fechaContacto) {
     const f = new Date(datos.data.fechaContacto);
     if (Number.isNaN(f.getTime()))
@@ -90,28 +98,34 @@ export async function POST(
     fechaContacto = f;
   }
 
-  const [actualizado] = await db.$transaction([
-    db.visitante.update({
-      where: { id },
+  // Solo se aplica si nadie tocó al visitante desde que se leyó: un doble
+  // toque o dos personas a la vez no crean dos avances iguales.
+  const aplicado = await db.$transaction(async (tx) => {
+    const r = await tx.visitante.updateMany({
+      where: { id, updatedAt: v.updatedAt },
       data: {
         ...(aEstado ? { estadoActual: aEstado } : {}),
         ...(sinContacto !== undefined ? { sinContacto } : {}),
       },
-    }),
-    ...(aEstado
-      ? [
-          db.visitanteHistorial.create({
-            data: {
-              visitanteId: id,
-              deEstado: v.estadoActual,
-              aEstado,
-              fechaContacto,
-              cambiadoPorId: s.sub,
-              observaciones: observaciones || null,
-            },
-          }),
-        ]
-      : []),
-  ]);
-  return NextResponse.json({ id: actualizado.id, estado: actualizado.estadoActual });
+    });
+    if (r.count === 0) return false;
+    if (aEstado)
+      await tx.visitanteHistorial.create({
+        data: {
+          visitanteId: id,
+          deEstado: v.estadoActual,
+          aEstado,
+          fechaContacto,
+          cambiadoPorId: s.sub,
+          observaciones: observaciones || null,
+        },
+      });
+    return true;
+  });
+  if (!aplicado)
+    return NextResponse.json(
+      { error: "El visitante acaba de cambiar. Recarga y revisa antes de reportar." },
+      { status: 409 }
+    );
+  return NextResponse.json({ id, estado: aEstado ?? v.estadoActual });
 }

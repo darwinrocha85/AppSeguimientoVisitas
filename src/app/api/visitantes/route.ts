@@ -87,7 +87,9 @@ export async function GET(req: Request) {
       iglesia: { select: { nombre: true } },
     },
     orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
-    take: 200,
+    // Con búsqueda se trae todo el alcance: el texto se filtra abajo (sin
+    // distinguir acentos) y recién después se recorta a 100.
+    take: q ? undefined : 200,
   });
   // Unión con no asignados (evita duplicados: 1er contacto con red pero
   // sin consolidador sale en ambas).
@@ -101,7 +103,7 @@ export async function GET(req: Request) {
         iglesia: { select: { nombre: true } },
       },
       orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
-      take: 200,
+      take: q ? undefined : 200,
     });
     const vistos = new Set(listaBase.map((v) => v.id));
     listaJunta = [
@@ -109,31 +111,31 @@ export async function GET(req: Request) {
       ...sin.filter((v) => !vistos.has(v.id)),
     ];
   }
-  // Orden alfabético estable en español (SQLite ordena por bytes y
-  // descuadra acentos/mayúsculas): así editar o guardar no mueve a nadie.
-  listaJunta = [...listaJunta]
-    .sort((a, b) =>
-      `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`, "es", {
-        sensitivity: "base",
-      })
-    )
-    .slice(0, 100);
-
   // SQLite compara texto con mayúsculas/acentos estrictos: filtramos aquí
-  // sin distinguir mayúsculas ni acentos (nombres en español).
+  // sin distinguir mayúsculas ni acentos (nombres en español). La búsqueda
+  // va ANTES del recorte a 100 para no perder a quien quede más abajo.
   const normaliza = (t: string) =>
     t
       .toLowerCase()
       .normalize("NFD")
       .replace(/[^a-z0-9 ]/g, "");
   const qn = normaliza(q);
-  const lista = qn
+  const buscados = qn
     ? listaJunta.filter((v) =>
         normaliza(
           `${v.nombre} ${v.apellido} ${v.telefono ?? ""}`
         ).includes(qn)
       )
     : listaJunta;
+  // Orden alfabético estable en español (SQLite ordena por bytes y
+  // descuadra acentos/mayúsculas): así editar o guardar no mueve a nadie.
+  const lista = [...buscados]
+    .sort((a, b) =>
+      `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`, "es", {
+        sensitivity: "base",
+      })
+    )
+    .slice(0, 100);
 
   const redIds = [...new Set(lista.map((v) => v.redId).filter(Boolean))];
   const grupoIds = [...new Set(lista.map((v) => v.grupoId).filter(Boolean))];
@@ -158,7 +160,9 @@ export async function GET(req: Request) {
           _max: { fechaCambio: true },
         })
       : [],
-    // Historial para el detalle (últimos reportes con fecha de contacto).
+    // Historial para el detalle: completo para los visitantes de la página
+    // (máx 100); abajo se dejan los 10 últimos de cada uno. Sin tope global,
+    // que dejaba sin historial a unos visitantes cuando otros tenían mucho.
     lista.length > 0
       ? await db.visitanteHistorial.findMany({
           where: { visitanteId: { in: lista.map((v) => v.id) } },
@@ -171,7 +175,6 @@ export async function GET(req: Request) {
             observaciones: true,
           },
           orderBy: { fechaCambio: "desc" },
-          take: 400,
         })
       : [],
   ]);
@@ -316,12 +319,13 @@ export async function POST(req: Request) {
         rol: { in: ["CONSOLIDADOR", "LIDER_RED", "LIDER_GRUPO", "LIDER_CONSOLIDADOR"] },
         iglesias: { some: { iglesiaId: d.iglesiaId } },
       },
-      select: { id: true, grupoId: true, redId: true },
+      select: { id: true, rol: true, grupoId: true, redId: true },
     });
     // Nivel iglesia (sin red/grupo, p. ej. líder consolidador) puede
     // consolidar cualquier grupo de su iglesia; con red/grupo fijados,
     // deben coincidir con los del visitante.
-    if (!c || (c.grupoId && d.grupoId && c.grupoId !== d.grupoId) || (c.redId && d.redId && c.redId !== d.redId))
+    // El líder de red vale para cualquier grupo de su red.
+    if (!c || (c.rol !== "LIDER_RED" && c.grupoId && d.grupoId && c.grupoId !== d.grupoId) || (c.redId && d.redId && c.redId !== d.redId))
       return NextResponse.json({ error: "Consolidador inválido" }, { status: 400 });
   }
 
